@@ -5,6 +5,9 @@ A lightweight, browser-based SVG editor with real-time preview and interactive e
 
 DEMO: https://steveseguin.github.io/svg-editor
 
+![image](https://github.com/user-attachments/assets/b730889b-7262-4ff5-877c-c07d4235d085)
+
+
 ## Features
 
 - **Live Preview**: See your SVG changes in real-time as you edit the code
