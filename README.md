@@ -2,7 +2,8 @@
 
 A lightweight, browser-based SVG editor with real-time preview and interactive editing capabilities. Built with vanilla JavaScript, this editor allows you to create, modify, and visualize SVG elements directly in your browser.
 
-![SVG Editor Screenshot](preview.png)
+
+DEMO: https://steveseguin.github.io/svg-editor
 
 ## Features
 
