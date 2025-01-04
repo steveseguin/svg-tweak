@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Interactive SVG Editor with drag, resize, and live preview capabilities">
+    <meta name="theme-color" content="#0066ff">
+    <title>SVG Editor</title>
+    <style>
+        :root {
+            --primary-color: #0066ff;
+            --primary-color-alpha: #0066ff33;
+            --border-color: #ccc;
+            --bg-color: #f5f5f5;
+            --spacing: 20px;
+            --border-radius: 4px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            margin: 0;
+            padding: var(--spacing);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing);
+            height: calc(100vh - 40px);
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        #preview {
+            flex: 2;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: var(--spacing);
+            overflow: auto;
+            background: var(--bg-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+            transition: background-color 0.2s ease;
+        }
+
+        #preview:hover {
+            background: #fafafa;
+        }
+
+        #editor {
+            flex: 1;
+            min-height: 200px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: var(--spacing);
+            overflow: auto;
+            resize: none;
+            font-family: 'SF Mono', Monaco, Menlo, Consolas, 'Liberation Mono', Courier, monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre;
+            tab-size: 2;
+            background: #fff;
+            transition: border-color 0.2s ease;
+        }
+
+        #editor:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px var(--primary-color-alpha);
+        }
+
+        #preview svg {
+            max-width: 100%;
+            max-height: 100%;
+            transition: transform 0.2s ease;
+        }
+
+        .draggable {
+            cursor: move;
+            transition: transform 0.1s ease;
+        }
+
+        .draggable:hover {
+            transform: scale(1.01);
+        }
+
+        .selected {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        ::selection {
+            background: var(--primary-color-alpha);
+        }
+
+        @media (min-width: 768px) {
+            .container {
+                flex-direction: row;
+            }
+            
+            #preview {
+                flex: 3;
+            }
+            
+            #editor {
+                flex: 2;
+            }
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #1a1a1a;
+                --border-color: #333;
+            }
+            
+            body {
+                background: #121212;
+                color: #fff;
+            }
+            
+            #editor {
+                background: #1e1e1e;
+                color: #fff;
+            }
+            
+            #preview:hover {
+                background: #222;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="preview" role="region" aria-label="SVG Preview"></div>
+        <textarea id="editor" spellcheck="false" aria-label="SVG Code Editor"></textarea>
+    </div>
+    <script>
+        const editor = document.getElementById('editor');
+        const preview = document.getElementById('preview');
+        let dragElement = null;
+        let selectedElement = null;
+        let initialX, initialY, elementInitialX, elementInitialY;
+
+        function updatePreview() {
+            try {
+                preview.innerHTML = editor.value;
+                makeElementsInteractive();
+                if (selectedElement) {
+                    const elementId = selectedElement.id || '';
+                    const newElement = preview.querySelector(elementId ? `#${elementId}` : selectedElement.tagName);
+                    if (newElement) {
+                        selectElement(newElement);
+                    }
+                }
+            } catch (e) {
+                console.error('Invalid SVG:', e);
+            }
+        }
+
+        function makeElementsInteractive() {
+            const svg = preview.querySelector('svg');
+            if (!svg) return;
+
+            const elements = svg.querySelectorAll('*');
+            elements.forEach(el => {
+                if (el.tagName !== 'svg') {
+                    el.classList.add('draggable');
+                    el.addEventListener('mousedown', startDrag);
+                    el.addEventListener('click', handleElementClick);
+                }
+            });
+        }
+
+        function handleElementClick(e) {
+            e.stopPropagation();
+            const element = e.target;
+            selectElement(element);
+            highlightCodeForElement(element);
+        }
+
+        function selectElement(element) {
+            if (selectedElement) {
+                selectedElement.classList.remove('selected');
+            }
+            selectedElement = element;
+            element.classList.add('selected');
+        }
+
+        function highlightCodeForElement(element) {
+            const serializer = new XMLSerializer();
+            const elementString = serializer.serializeToString(element);
+            const text = editor.value;
+            const start = text.indexOf(elementString);
+            
+            if (start !== -1) {
+                editor.focus();
+                editor.setSelectionRange(start, start + elementString.length);
+            }
+        }
+
+        editor.addEventListener('select', () => {
+            const selection = editor.value.substring(editor.selectionStart, editor.selectionEnd);
+            if (selection) {
+                try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(selection, 'image/svg+xml');
+                    const element = doc.documentElement;
+                    if (element.tagName !== 'parsererror') {
+                        const previewElement = preview.querySelector(element.tagName);
+                        if (previewElement) {
+                            selectElement(previewElement);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Invalid selection:', e);
+                }
+            }
+        });
+
+        function getElementSize(el) {
+            switch (el.tagName.toLowerCase()) {
+                case 'rect':
+                    return {
+                        width: parseFloat(el.getAttribute('width') || 0),
+                        height: parseFloat(el.getAttribute('height') || 0)
+                    };
+                case 'circle':
+                    return { r: parseFloat(el.getAttribute('r') || 0) };
+                case 'ellipse':
+                    return {
+                        rx: parseFloat(el.getAttribute('rx') || 0),
+                        ry: parseFloat(el.getAttribute('ry') || 0)
+                    };
+                case 'text':
+                    return {
+                        fontSize: parseFloat(getComputedStyle(el).fontSize)
+                    };
+            }
+            return null;
+        }
+
+        function updateElementSize(el, factor) {
+            const size = getElementSize(el);
+            if (!size) return;
+
+            switch (el.tagName.toLowerCase()) {
+                case 'rect':
+                    el.setAttribute('width', size.width * factor);
+                    el.setAttribute('height', size.height * factor);
+                    break;
+                case 'circle':
+                    el.setAttribute('r', size.r * factor);
+                    break;
+                case 'ellipse':
+                    el.setAttribute('rx', size.rx * factor);
+                    el.setAttribute('ry', size.ry * factor);
+                    break;
+                case 'text':
+                    const newSize = size.fontSize * factor;
+                    el.setAttribute('font-size', `${newSize}px`);
+                    break;
+            }
+            updateSVGText();
+        }
+
+        preview.addEventListener('wheel', (e) => {
+            if (selectedElement) {
+                e.preventDefault();
+                const factor = e.deltaY > 0 ? 0.9 : 1.1;
+                updateElementSize(selectedElement, factor);
+            }
+        });
+
+        function getElementPosition(el) {
+            switch (el.tagName.toLowerCase()) {
+                case 'rect':
+                case 'text':
+                    return {
+                        x: parseFloat(el.getAttribute('x') || 0),
+                        y: parseFloat(el.getAttribute('y') || 0)
+                    };
+                case 'circle':
+                case 'ellipse':
+                    return {
+                        x: parseFloat(el.getAttribute('cx') || 0),
+                        y: parseFloat(el.getAttribute('cy') || 0)
+                    };
+                case 'line':
+                    return {
+                        x1: parseFloat(el.getAttribute('x1') || 0),
+                        y1: parseFloat(el.getAttribute('y1') || 0),
+                        x2: parseFloat(el.getAttribute('x2') || 0),
+                        y2: parseFloat(el.getAttribute('y2') || 0)
+                    };
+                case 'polygon':
+                case 'polyline':
+                    const points = el.getAttribute('points').split(/[\s,]+/).map(parseFloat);
+                    return { points };
+                case 'path':
+                    return { d: el.getAttribute('d') };
+                default:
+                    const bbox = el.getBBox();
+                    return { x: bbox.x, y: bbox.y };
+            }
+        }
+
+        function updateElementPosition(el, dx, dy) {
+            switch (el.tagName.toLowerCase()) {
+                case 'rect':
+                case 'text':
+                    el.setAttribute('x', parseFloat(el.getAttribute('x') || 0) + dx);
+                    el.setAttribute('y', parseFloat(el.getAttribute('y') || 0) + dy);
+                    break;
+                case 'circle':
+                case 'ellipse':
+                    el.setAttribute('cx', parseFloat(el.getAttribute('cx') || 0) + dx);
+                    el.setAttribute('cy', parseFloat(el.getAttribute('cy') || 0) + dy);
+                    break;
+                case 'line':
+                    el.setAttribute('x1', parseFloat(el.getAttribute('x1') || 0) + dx);
+                    el.setAttribute('y1', parseFloat(el.getAttribute('y1') || 0) + dy);
+                    el.setAttribute('x2', parseFloat(el.getAttribute('x2') || 0) + dx);
+                    el.setAttribute('y2', parseFloat(el.getAttribute('y2') || 0) + dy);
+                    break;
+                case 'polygon':
+                case 'polyline':
+                    const points = el.getAttribute('points').split(/[\s,]+/).map(parseFloat);
+                    const newPoints = [];
+                    for (let i = 0; i < points.length; i += 2) {
+                        newPoints.push(points[i] + dx);
+                        newPoints.push(points[i + 1] + dy);
+                    }
+                    el.setAttribute('points', newPoints.join(' '));
+                    break;
+                case 'path':
+                    // Instead of concatenating transforms, update the current position
+                    const currentTransform = el.getAttribute('transform') || '';
+                    const translate = `translate(${dx},${dy})`;
+                    if (!currentTransform) {
+                        el.setAttribute('transform', translate);
+                    } else {
+                        // Extract existing translate if it exists
+                        const match = currentTransform.match(/translate\(([-\d.]+),([-\d.]+)\)/);
+                        if (match) {
+                            const [_, tx, ty] = match;
+                            el.setAttribute('transform', `translate(${parseFloat(tx) + dx},${parseFloat(ty) + dy})`);
+                        } else {
+                            el.setAttribute('transform', `${currentTransform} ${translate}`);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        function startDrag(e) {
+            e.stopPropagation();
+            dragElement = e.target;
+            selectElement(dragElement);
+            highlightCodeForElement(dragElement);
+
+            const svgElement = dragElement.ownerSVGElement;
+            const pt = svgElement.createSVGPoint();
+            pt.x = e.clientX;
+            pt.y = e.clientY;
+            const svgP = pt.matrixTransform(svgElement.getScreenCTM().inverse());
+            initialX = svgP.x;
+            initialY = svgP.y;
+
+            const pos = getElementPosition(dragElement);
+            if ('x' in pos) {
+                elementInitialX = pos.x;
+                elementInitialY = pos.y;
+            } else if ('cx' in pos) {
+                elementInitialX = pos.x;
+                elementInitialY = pos.y;
+            }
+
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', endDrag);
+        }
+
+        function drag(e) {
+            if (!dragElement) return;
+
+            const svgElement = dragElement.ownerSVGElement;
+            const pt = svgElement.createSVGPoint();
+            pt.x = e.clientX;
+            pt.y = e.clientY;
+            const svgP = pt.matrixTransform(svgElement.getScreenCTM().inverse());
+            
+            const pos = getElementPosition(dragElement);
+            const currentX = ('x' in pos) ? pos.x : (pos.cx || 0);
+            const currentY = ('y' in pos) ? pos.y : (pos.cy || 0);
+            
+            const dx = svgP.x - initialX;
+            const dy = svgP.y - initialY;
+
+            updateElementPosition(dragElement, dx, dy);
+            updateSVGText();
+            
+            initialX = svgP.x;
+            initialY = svgP.y;
+        }
+
+        function updateSVGText() {
+            const serializer = new XMLSerializer();
+            const svgString = serializer.serializeToString(preview.querySelector('svg'));
+            editor.value = svgString;
+        }
+
+        function endDrag() {
+            dragElement = null;
+            document.removeEventListener('mousemove', drag);
+            document.removeEventListener('mouseup', endDrag);
+        }
+
+        editor.addEventListener('input', updatePreview);
+
+        // Example SVG
+        editor.value = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <rect x="50" y="50" width="50" height="50" fill="blue"/>
+  <circle cx="125" cy="75" r="25" fill="red"/>
+  <text x="75" y="150" fill="green">Drag me!</text>
+</svg>`;
+        updatePreview();
+    </script>
+</body>
+</html>
