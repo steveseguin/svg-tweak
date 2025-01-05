@@ -190,6 +190,12 @@
             selectedElement = element;
             element.classList.add('selected');
         }
+		
+		document.getElementById("preview").onclick = function(){
+			if (selectedElement) {
+				selectedElement.classList.remove('selected');
+			}
+		}
 
         function highlightCodeForElement(element) {
             const serializer = new XMLSerializer();
