@@ -246,14 +246,18 @@
                 <input type="range" id="svg-scale" min="0.5" max="3" step="0.1" value="1">
                 <span id="scale-value">100%</span>
             </div>
-            <button id="center-view">Center View</button>
-            <button id="fit-to-content">Fit to Content</button>
+            <button id="center-view">🎯Center View</button>
+            <button id="fit-to-content">🪟Fit to Content</button>
 			<div class="control-group">
-				<button id="export-png">Export PNG</button>
+                <button id="export-svg">💾Export SVG</button>
+            </div>
+			<div class="control-group">
+				<button id="export-png">🖼️Export PNG</button>
 				<input type="number" id="export-width" min="1" value="800" aria-label="Export width">
 				<span>×</span>
 				<input type="number" id="export-height" min="1" value="800" aria-label="Export height">
 			</div>
+			
         </div>
         <div id="preview" role="region" aria-label="SVG Preview">
         </div>
@@ -685,7 +689,33 @@ function startDrag(e) {
 const exportPngBtn = document.getElementById('export-png');
 const exportWidthInput = document.getElementById('export-width');
 const exportHeightInput = document.getElementById('export-height');
+const exportSvgBtn = document.getElementById('export-svg');
 
+function exportToSvg() {
+    const svg = svgContainer.querySelector('svg');
+    if (!svg) return;
+    
+    const serializer = new XMLSerializer();
+    let svgString = serializer.serializeToString(svg);
+    
+    // Ensure the SVG has the correct namespace
+    if (!svgString.includes('xmlns=')) {
+        svgString = svgString.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+    }
+    
+    // Create SVG blob and download
+    const svgBlob = new Blob([svgString], {
+        type: 'image/svg+xml'
+    });
+    const url = URL.createObjectURL(svgBlob);
+    const downloadLink = document.createElement('a');
+    downloadLink.href = url;
+    downloadLink.download = 'export.svg';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(url);
+}
 function exportToPng() {
 	const svg = svgContainer.querySelector('svg');
 	if (!svg) return;
@@ -725,6 +755,7 @@ function exportToPng() {
 	img.src = url;
 }
 exportPngBtn.addEventListener('click', exportToPng);
+exportSvgBtn.addEventListener('click', exportToSvg);
 
 function drag(e) {
 	if (!dragElement) return;
