@@ -3,7 +3,7 @@
 A lightweight, browser-based SVG editor with real-time preview and interactive editing capabilities. Built with vanilla JavaScript, this editor allows you to create, modify, and visualize SVG elements directly in your browser.
 
 
-USE IT NOW: https://steveseguin.github.io/svg-tweak
+USE IT NOW: [https://svgtweak.com](https://svgtweak.com)
 
 ![image](https://github.com/user-attachments/assets/b730889b-7262-4ff5-877c-c07d4235d085)
 
