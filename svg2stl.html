@@ -801,34 +801,34 @@
                 // Merge geometries if multiple exist
                 let mergedGeometry;
                 if (geometries.length > 1) {
-                    mergedGeometry = BufferGeometryUtils.mergeBufferGeometries(geometries);
+                    mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries);
                 } else {
                     mergedGeometry = geometries[0];
                 }
                 
-            if (!geometry) {
-                console.error('No geometry provided for STL generation');
-                return createFallbackSTL();
-            }
-            
-            try {
+                // The variable 'geometry' is undefined, should be 'mergedGeometry'
+                if (!mergedGeometry) {
+                    console.error('No geometry provided for STL generation');
+                    return createFallbackSTL();
+                }
+                
                 // Make sure the geometry is a BufferGeometry for STL export
-                if (!(geometry instanceof THREE.BufferGeometry)) {
-                    geometry = new THREE.BufferGeometry().fromGeometry(geometry);
+                if (!(mergedGeometry instanceof THREE.BufferGeometry)) {
+                    mergedGeometry = new THREE.BufferGeometry().fromGeometry(mergedGeometry);
                 }
                 
                 // Get position attribute from geometry
-                const positionAttribute = geometry.getAttribute('position');
+                const positionAttribute = mergedGeometry.getAttribute('position');
                 if (!positionAttribute) {
                     console.error('Geometry has no position attribute');
                     return createFallbackSTL();
                 }
                 
                 // Get normal attribute or compute it if not present
-                let normalAttribute = geometry.getAttribute('normal');
+                let normalAttribute = mergedGeometry.getAttribute('normal');
                 if (!normalAttribute) {
-                    geometry.computeVertexNormals();
-                    normalAttribute = geometry.getAttribute('normal');
+                    mergedGeometry.computeVertexNormals();
+                    normalAttribute = mergedGeometry.getAttribute('normal');
                 }
                 
                 // Count triangles
