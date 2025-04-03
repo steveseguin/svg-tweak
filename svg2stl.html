@@ -246,28 +246,7 @@
     </div>
     <script>
 
-        function loadBufferGeometryUtils() {
-                        return new Promise((resolve, reject) => {
-                            // Check if BufferGeometryUtils is already available
-                            if (typeof THREE.BufferGeometryUtils !== 'undefined') {
-                                resolve();
-                                return;
-                            }
-                            
-                            console.log('BufferGeometryUtils not loaded, attempting to load it now');
-                            const script = document.createElement('script');
-                            script.src = 'https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/utils/BufferGeometryUtils.js';
-                            script.onload = () => {
-                                console.log('BufferGeometryUtils loaded successfully');
-                                resolve();
-                            };
-                            script.onerror = (err) => {
-                                console.error('Failed to load BufferGeometryUtils:', err);
-                                reject(err);
-                            };
-                            document.head.appendChild(script);
-                        });
-                    }
+
     </script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js"></script>
@@ -286,7 +265,19 @@
         const modeDescription = document.getElementById('mode-description');
 
 
-
+        async function loadBufferGeometryUtils() {
+            // Check if BufferGeometryUtils is already loaded
+            if (window.BufferGeometryUtils) {
+                return Promise.resolve();
+            }
+            
+            // If not already loaded, it should be available from the import
+            if (!window.BufferGeometryUtils) {
+                console.warn('BufferGeometryUtils not loaded, some operations may fail');
+            }
+            
+            return Promise.resolve();
+        }
         // State variables
         let svgContent = null;
         let stlContent = null;
