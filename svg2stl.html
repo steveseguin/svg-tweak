@@ -244,24 +244,27 @@
             </div>
         </div>
     </div>
-
-    <script type="module">
-        // Using CDN URLs directly
-        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.module.js';
-        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/controls/OrbitControls.js';
-        import { BufferGeometryUtils } from 'https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/utils/BufferGeometryUtils.js';
-    
-        // Make THREE available globally
-        window.THREE = THREE;
-        window.OrbitControls = OrbitControls;
-        window.BufferGeometryUtils = BufferGeometryUtils;
-        
-        // Initialize after imports are complete
-        document.addEventListener('DOMContentLoaded', () => {
-            // The rest of your code that depends on THREE can be called here
-            console.log("THREE.js modules loaded successfully");
-        });
+    <script>
+        function loadBufferGeometryUtils() {
+                // BufferGeometryUtils should already be loaded via the script tag
+                if (typeof THREE.BufferGeometryUtils !== 'undefined') {
+                    return Promise.resolve();
+                } else {
+                    console.warn('BufferGeometryUtils not loaded, attempting to load it now');
+                    return new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/utils/BufferGeometryUtils.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+                }
+            }
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/utils/BufferGeometryUtils.js"></script>
+   
     
     <script>
         // DOM elements
@@ -273,7 +276,9 @@
         const stlPreview = document.getElementById('stl-preview');
         const modeToggle = document.getElementById('mode-toggle');
         const modeDescription = document.getElementById('mode-description');
-        
+
+
+
         // State variables
         let svgContent = null;
         let stlContent = null;
@@ -1504,10 +1509,9 @@ async function loadBufferGeometryUtils() {
             return createFallbackSTL();
         }
         
-        // Merge geometries if multiple exist
         let mergedGeometry;
-        if (geometries.length > 1 && window.BufferGeometryUtils) {
-            mergedGeometry = window.BufferGeometryUtils.mergeBufferGeometries(geometries);
+        if (geometries.length > 1 && THREE.BufferGeometryUtils) {
+            mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries);
         } else if (geometries.length > 0) {
             mergedGeometry = geometries[0];
         } else {
