@@ -246,14 +246,21 @@
     </div>
 
     <script type="module">
-        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@latest/build/three.module.js';
-        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@latest/examples/jsm/controls/OrbitControls.js';
-        import { BufferGeometryUtils } from 'https://cdn.jsdelivr.net/npm/three@latest/examples/jsm/utils/BufferGeometryUtils.js';
-        
+        // Using CDN URLs directly
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.module.js';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/controls/OrbitControls.js';
+        import { BufferGeometryUtils } from 'https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/utils/BufferGeometryUtils.js';
+    
         // Make THREE available globally
         window.THREE = THREE;
         window.OrbitControls = OrbitControls;
         window.BufferGeometryUtils = BufferGeometryUtils;
+        
+        // Initialize after imports are complete
+        document.addEventListener('DOMContentLoaded', () => {
+            // The rest of your code that depends on THREE can be called here
+            console.log("THREE.js modules loaded successfully");
+        });
     </script>
     
     <script>
