@@ -492,8 +492,8 @@
     if (!viewBox) return;
     
     // Calculate appropriate extrusion height range based on SVG dimensions
-    const maxDimension = Math.max(viewBox.width, viewBox.height)/200;
-    const defaultHeight = Math.max(0.0001, maxDimension * 0.05); // 5% of max dimension
+    const maxDimension = Math.max(viewBox.width, viewBox.height);
+    const defaultHeight = Math.max(0.0001, maxDimension * 0.00025); // 5% of max dimension
     
     // Update extrusion height slider
     const extrusionHeightSlider = document.getElementById('extrusion-height');
@@ -510,6 +510,7 @@
     
     const defaultBase = Math.max(0.5, (maxDimension * 0.01)); // 1% of max dimension
     baseThicknessSlider.min = "0";
+    baseThicknessSlider.step = Math.min(1,maxDimension/1000);
     baseThicknessSlider.max = (maxDimension * 0.1); // 10% of max dimension
     baseThicknessSlider.value = defaultBase;
     baseThicknessValue.value = defaultBase;
@@ -1026,10 +1027,12 @@
         
     // Helper to set up orbit controls
     function setupOrbitControls(camera, renderer) {
-        // Cancel any previous animations first
-        if (window.previousAnimationFrameId) {
-            return;
-            cancelAnimationFrame(window.previousAnimationFrameId);
+        // Clean up previous animation
+        if (window.animationLoops) {
+            window.animationLoops.forEach(id => cancelAnimationFrame(id));
+            window.animationLoops = [];
+        } else {
+            window.animationLoops = [];
         }
         
         let animationFrameId;
@@ -1067,6 +1070,7 @@
             
             function animate() {
                 animationFrameId = requestAnimationFrame(animate);
+                window.animationLoops.push(animationFrameId);
                 controls.update();
                 renderer.render(scene, camera);
             }
@@ -1074,6 +1078,7 @@
         } else {
             function animate() {
                 animationFrameId = requestAnimationFrame(animate);
+                window.animationLoops.push(animationFrameId);
                 scene.rotation.x += 0.005;
                 scene.rotation.y += 0.005;
                 renderer.render(scene, camera);
@@ -1081,13 +1086,10 @@
             animate();
         }
         
-        // Store animation reference globally to allow cancellation on next conversion
-        window.previousAnimationFrameId = animationFrameId;
-        
         // Clean up on window unload
         window.addEventListener('unload', () => {
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
+            if (window.animationLoops) {
+                window.animationLoops.forEach(id => cancelAnimationFrame(id));
             }
         });
     }
