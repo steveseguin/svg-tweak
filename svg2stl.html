@@ -569,113 +569,129 @@
                           qp.x + args[2], qp.y - args[3]
                       );
                       break;
-                case 'A': // Arc (absolute)
-                    try {
-                        // Get current point for start of arc
-                        const startX = shape.currentPoint.x;
-                        const startY = shape.currentPoint.y;
-                        
-                        // Get arc parameters
-                        const rx = Math.abs(args[0]); // Ensure positive radius
-                        const ry = Math.abs(args[1]);
-                        const xAxisRotation = args[2] * Math.PI / 180; // Convert to radians
-                        const largeArcFlag = args[3] ? 1 : 0;
-                        const sweepFlag = args[4] ? 1 : 0;
-                        const endX = args[5];
-                        const endY = -args[6]; // Note the negative Y for Three.js coordinate system
-                        
-                        // Skip degenerate cases
-                        if (startX === endX && startY === endY) {
-                            break;
-                        }
-                        
-                        if (rx === 0 || ry === 0) {
+                  case 'A': // Arc (absolute)
+                        try {
+                            // --- Get current point and parameters ---
+                            const currentPoint = shape.currentPoint; // THREE.Vector2 { x: ..., y: ... }
+                            const startX = currentPoint.x;
+                            const startY = currentPoint.y; // Already in Three.js Y-up system
+    
+                            const rx = Math.abs(args[0] * scale); // Apply scale
+                            const ry = Math.abs(args[1] * scale); // Apply scale
+                            const xAxisRotationRad = args[2] * Math.PI / 180; // Keep radians
+                            const largeArcFlag = args[3] ? 1 : 0;
+                            const sweepFlag = args[4] ? 1 : 0;
+                            const endX = args[5] * scale;          // Apply scale
+                            const endY = -args[6] * scale;         // Apply scale AND flip Y
+    
+                            // --- Degenerate checks ---
+                            const dxAbs = Math.abs(startX - endX);
+                            const dyAbs = Math.abs(startY - endY);
+                            // If start and end points are identical or radii are zero, treat as zero-length path segment
+                            if ((dxAbs < 1e-9 && dyAbs < 1e-9) || rx === 0 || ry === 0) {
+                                // No change in position, but update current point if needed? Usually no-op.
+                                // Or, if endpoints differ but radii are 0, should be lineTo:
+                                if (dxAbs >= 1e-9 || dyAbs >= 1e-9) {
+                                    shape.lineTo(endX, endY);
+                                }
+                                break;
+                            }
+    
+                            // --- Endpoint to Center Parameterization (SVG Spec F.6.5) ---
+                            // Heavily based on https://github.com/mrdoob/three.js/blob/dev/src/extras/core/ShapePath.js arcToSvg
+                            // and https://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes
+                            // Adapted for coordinate system (already Y-up in startX/Y, endY is flipped)
+    
+                            const cosRot = Math.cos(xAxisRotationRad);
+                            const sinRot = Math.sin(xAxisRotationRad);
+    
+                            // Step 1: Compute (x1', y1')
+                            const dx = (startX - endX) / 2;
+                            const dy = (startY - endY) / 2; // Uses already flipped endY
+                            const x1p = cosRot * dx + sinRot * dy;
+                            const y1p = -sinRot * dx + cosRot * dy;
+    
+                            // Step 2: Compute (cx', cy')
+                            let rx_sq = rx * rx;
+                            let ry_sq = ry * ry;
+                            const x1p_sq = x1p * x1p;
+                            const y1p_sq = y1p * y1p;
+    
+                            // Ensure radii are large enough
+                            const radiiCheck = x1p_sq / rx_sq + y1p_sq / ry_sq;
+                            if (radiiCheck > 1.0001) { // Add tolerance
+                                const radiiScale = Math.sqrt(radiiCheck);
+                                rx *= radiiScale;
+                                ry *= radiiScale;
+                                rx_sq = rx * rx;
+                                ry_sq = ry * ry;
+                            }
+    
+                            const sign = (largeArcFlag === sweepFlag) ? -1 : 1;
+                            // Protect against sqrt of negative number due to floating point errors
+                            const num = Math.max(0, (rx_sq * ry_sq) - (rx_sq * y1p_sq) - (ry_sq * x1p_sq));
+                            const den = (rx_sq * y1p_sq) + (ry_sq * x1p_sq);
+                            const sq = (den === 0) ? 0 : num / den; // Avoid division by zero
+                            const coef = sign * Math.sqrt(sq);
+    
+                            const cxp = coef * (rx * y1p / ry);
+                            const cyp = coef * -(ry * x1p / rx);
+    
+                            // Step 3: Compute (cx, cy) from (cx', cy')
+                            const cx = cosRot * cxp - sinRot * cyp + (startX + endX) / 2;
+                            const cy = sinRot * cxp + cosRot * cyp + (startY + endY) / 2;
+    
+                            // Step 4: Compute startAngle and deltaAngle
+                            // Vector from center to start point (transformed)
+                            const ux = (x1p - cxp) / rx;
+                            const uy = (y1p - cyp) / ry;
+                            // Vector from center to end point (transformed)
+                            const vx = (-x1p - cxp) / rx;
+                            const vy = (-y1p - cyp) / ry;
+    
+                            // Compute start angle
+                            let startAngle = angleBetween(1, 0, ux, uy); // Angle of start vector relative to +X axis
+    
+                            // Compute delta angle (angle between start and end vectors)
+                            let deltaAngle = angleBetween(ux, uy, vx, vy); // Signed angle from u to v (-PI to PI)
+    
+                            // Adjust delta angle based on flags (from Three.js ShapePath logic)
+                            if (sweepFlag === 0 && deltaAngle > 0) {
+                                deltaAngle -= 2 * Math.PI;
+                            } else if (sweepFlag === 1 && deltaAngle < 0) {
+                                deltaAngle += 2 * Math.PI;
+                            }
+                            // Note: Large arc flag is implicitly handled by the center calculation's 'sign'
+    
+                            const endAngle = startAngle + deltaAngle;
+    
+                            // --- Use THREE.Path.absellipse ---
+                            // Clockwise parameter for absellipse: true if sweepFlag is 1 (SVG CW)
+                            const clockwise = (sweepFlag === 1);
+    
+                            shape.absellipse(
+                                cx, cy,             // Center x, y (in Three.js coords)
+                                rx, ry,             // Radius x, y
+                                startAngle, endAngle, // Start and end angles (radians)
+                                clockwise,          // Clockwise flag
+                                xAxisRotationRad    // Rotation (radians)
+                            );
+    
+                            // absellipse *should* update the currentPoint, but SVG requires
+                            // the path continues *exactly* from the specified end point (endX, endY).
+                            // Due to potential floating point inaccuracies in absellipse,
+                            // explicitly move to the target end point.
+                            // Update: shape.currentPoint is likely updated by absellipse.
+                            // We don't need an extra lineTo unless debugging shows currentPoint is wrong.
+    
+                        } catch (e) {
+                            console.error('Error processing arc command:', cmd, 'Error:', e);
+                            // Fallback to simple line if arc processing fails catastrophically
+                            const endX = cmd.args[5] * scale;
+                            const endY = -cmd.args[6] * scale;
                             shape.lineTo(endX, endY);
-                            break;
                         }
-                        
-                        // Approximate the arc with straight line segments
-                        // Step 1: Convert from endpoint to center parameterization
-                        // Apply coordinate corrections first for the Three.js y-flipped system
-                        const dx = (startX - endX) / 2;
-                        const dy = (startY - endY) / 2;
-                        
-                        // Step 1: Compute transformed start point
-                        const x1p = Math.cos(xAxisRotation) * dx + Math.sin(xAxisRotation) * dy;
-                        const y1p = -Math.sin(xAxisRotation) * dx + Math.cos(xAxisRotation) * dy;
-                        
-                        // Step 2: Correct radii if necessary
-                        let rxSq = rx * rx;
-                        let rySq = ry * ry;
-                        const x1pSq = x1p * x1p;
-                        const y1pSq = y1p * y1p;
-                        
-                        // Check if the radii are too small
-                        const radiiCheck = x1pSq / rxSq + y1pSq / rySq;
-                        if (radiiCheck > 1) {
-                            const s = Math.sqrt(radiiCheck);
-                            rx *= s;
-                            ry *= s;
-                            rxSq = rx * rx;
-                            rySq = ry * ry;
-                        }
-                        
-                        // Step 3: Compute center
-                        const sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
-                        
-                        const sq = ((rxSq * rySq) - (rxSq * y1pSq) - (rySq * x1pSq)) / 
-                                   ((rxSq * y1pSq) + (rySq * x1pSq));
-                        const coef = sign * Math.sqrt(Math.max(0, sq));
-                        
-                        const cxp = coef * ((rx * y1p) / ry);
-                        const cyp = coef * (-(ry * x1p) / rx);
-                        
-                        // Step 4: Compute final center coordinates
-                        const cx = Math.cos(xAxisRotation) * cxp - Math.sin(xAxisRotation) * cyp + (startX + endX) / 2;
-                        const cy = Math.sin(xAxisRotation) * cxp + Math.cos(xAxisRotation) * cyp + (startY + endY) / 2;
-                        
-                        // Step 5: Calculate the start and sweep angles
-                        const ux = (x1p - cxp) / rx;
-                        const uy = (y1p - cyp) / ry;
-                        const vx = (-x1p - cxp) / rx;
-                        const vy = (-y1p - cyp) / ry;
-                        
-                        // Start angle
-                        let startAngle = angleBetween(1, 0, ux, uy);
-                        
-                        // Sweep angle
-                        let deltaAngle = angleBetween(ux, uy, vx, vy);
-                        
-                        // Ensure sweep direction matches the SVG flag in the Three.js coordinate system
-                        // SVG sweep=0 -> CCW -> positive angle in Three.js
-                        // SVG sweep=1 -> CW  -> negative angle in Three.js
-                        if (sweepFlag === 0 && deltaAngle < 0) { // SVG wants CCW, angle is CW -> add 2PI
-                            deltaAngle += 2 * Math.PI;
-                        } else if (sweepFlag === 1 && deltaAngle > 0) { // SVG wants CW, angle is CCW -> subtract 2PI
-                            deltaAngle -= 2 * Math.PI;
-                        }
-
-                        // Generate points along the arc
-                        const numSegments = Math.max(16, Math.ceil(Math.abs(deltaAngle) * 16 / (Math.PI / 2)));
-                        for (let i = 1; i <= numSegments; i++) {
-                            const theta = startAngle + (i / numSegments) * deltaAngle;
-                            
-                            // Compute point on ellipse in the transformed space
-                            const xp = rx * Math.cos(theta);
-                            const yp = ry * Math.sin(theta);
-                            
-                            // Transform back to original space
-                            const x = Math.cos(xAxisRotation) * xp - Math.sin(xAxisRotation) * yp + cx;
-                            const y = Math.sin(xAxisRotation) * xp + Math.cos(xAxisRotation) * yp + cy;
-                            
-                            shape.lineTo(x, y);
-                        }
-                    } catch (e) {
-                        console.error('Error processing arc:', e);
-                        // Fallback to simple line if arc processing fails
-                        shape.lineTo(args[5], -args[6]);
-                    }
-                    break;
+                        break;
                   case 'Z':
                   case 'z':
                       shape.closePath();
