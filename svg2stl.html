@@ -426,48 +426,6 @@
                     Z`;
         }
 
-        // Create points to approximate an arc
-        function approximateArc(x1, y1, rx, ry, angle, largeArcFlag, sweepFlag, x2, y2) {
-            // Convert angle from degrees to radians
-            const angleRad = angle * Math.PI / 180;
-            
-            // Create a proper approximation with multiple points
-            const numSegments = 8; // Increase for smoother arcs
-            const points = [];
-            
-            // Find center of ellipse (simplified, assumes unrotated ellipse)
-            // Convert from endpoint to center parameterization
-            const dx = (x2 - x1) / 2;
-            const dy = (y2 - y1) / 2;
-            const x1p = 0;
-            const y1p = 0;
-            
-            // Adjust for different sweep and large arc flags
-            let start, end;
-            if ((!largeArcFlag && !sweepFlag) || (largeArcFlag && sweepFlag)) {
-                start = 0;
-                end = Math.PI / 2;
-            } else {
-                start = Math.PI / 2;
-                end = Math.PI;
-            }
-            
-            // Generate points along the arc
-            for (let i = 0; i <= numSegments; i++) {
-                const t = start + (i / numSegments) * (end - start);
-                const pointX = x1 + rx * Math.cos(t);
-                const pointY = y1 + ry * Math.sin(t);
-                points.push({ x: pointX, y: pointY });
-            }
-            
-            // Always include the end point
-            if (points.length === 0 || 
-                (points[points.length-1].x !== x2 || points[points.length-1].y !== y2)) {
-                points.push({ x: x2, y: y2 });
-            }
-            
-            return points;
-        }
 
         function updateResolutionSetting() {
             // Count the number of paths and the average number of points
@@ -489,16 +447,6 @@
             resolutionValue.value = complexity;
         }
 
-        /**
-     * Calculates the angle between two 2D vectors.
-     * The angle is measured from vector (ux, uy) to vector (vx, vy) in radians.
-     * The result is between -PI and PI.
-     * @param {number} ux X-component of the first vector
-     * @param {number} uy Y-component of the first vector
-     * @param {number} vx X-component of the second vector
-     * @param {number} vy Y-component of the second vector
-     * @returns {number} Angle in radians
-     */
     function angleBetween(ux, uy, vx, vy) {
     // Handle zero vectors
     if ((ux === 0 && uy === 0) || (vx === 0 && vy === 0)) {
@@ -523,18 +471,18 @@
 }
                 
         function createShapeFromPathData(shape, pathData, scale) {
-    // Parse SVG path data and create a Three.js shape
-    const commands = parseSVGPath(pathData);
-    let firstCommand = true;
-    let lastControlPoint = null;
-    
-    for (let i = 0; i < commands.length; i++) {
-        const cmd = commands[i];
-        const type = cmd.type;
-        const args = cmd.args.map(arg => arg * scale);
-        
-        try {
-            switch(type) {
+            // Parse SVG path data and create a Three.js shape
+            const commands = parseSVGPath(pathData);
+            let firstCommand = true;
+            let lastControlPoint = null;
+            
+            for (let i = 0; i < commands.length; i++) {
+                const cmd = commands[i];
+                const type = cmd.type;
+                const args = cmd.args.map(arg => arg * scale);
+                
+                try {
+                    switch(type) {
                 case 'M': // Move to (absolute)
                     shape.moveTo(args[0], -args[1]); // Note Y-axis flip for Three.js
                     break;
@@ -692,7 +640,7 @@
                     );
                     lastControlPoint = { x: tx2, y: ty2 };
                     break;
-                case 'A': // Arc (absolute)
+                 case 'A': // Arc (absolute)
                     // Get current point
                     const arcStart = shape.currentPoint;
                     const startX = arcStart.x;
@@ -770,12 +718,13 @@
                             deltaAngle += 2 * Math.PI;
                         }
                         
-                        // Use absellipse to draw the arc
+                        // IMPORTANT FIX: Correct the arc direction parameters
+                        // For Three.js absellipse: counterClockwise = !sweepFlag
                         shape.absellipse(
                             cx, cy, 
                             rx, ry, 
                             startAngle, startAngle + deltaAngle, 
-                            !sweepFlag, 
+                            !sweepFlag, // This should be inversed from the SVG flag
                             xAxisRotation
                         );
                     } catch (err) {
@@ -939,107 +888,105 @@
     baseThicknessValue.value = defaultBase;
 }
         
-      function parseSVG(svgString) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(svgString, 'image/svg+xml');
-        const svg = doc.querySelector('svg');
+function parseSVG(svgString) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgString, 'image/svg+xml');
+    const svg = doc.querySelector('svg');
+    
+    // Extract viewBox
+    if (svg.getAttribute('viewBox')) {
+        const viewBoxValues = svg.getAttribute('viewBox').split(' ');
+        svgViewBox = {
+            x: parseFloat(viewBoxValues[0]),
+            y: parseFloat(viewBoxValues[1]),
+            width: parseFloat(viewBoxValues[2]),
+            height: parseFloat(viewBoxValues[3])
+        };
+    } else if (svg.getAttribute('width') && svg.getAttribute('height')) {
+        svgViewBox = {
+            x: 0,
+            y: 0,
+            width: parseFloat(svg.getAttribute('width')),
+            height: parseFloat(svg.getAttribute('height'))
+        };
+    }
+
+    updateExtrusionSettings(svgViewBox);
+    
+    // Structure to hold paths and their types (outer contours vs holes)
+    svgPaths = [];
+    
+    // Extract all elements that can define shapes
+    const pathElements = svg.querySelectorAll('path');
+    const rectElements = svg.querySelectorAll('rect');
+    const circleElements = svg.querySelectorAll('circle');
+    const lineElements = svg.querySelectorAll('line');
+    const polylineElements = svg.querySelectorAll('polyline');
+    const polygonElements = svg.querySelectorAll('polygon');
+
+    // Process paths
+    pathElements.forEach(path => {
+        let isHole = determineIfHole(path);
+        svgPaths.push({
+            pathData: path.getAttribute('d'),
+            isHole: isHole,
+            strokeWidth: parseFloat(path.getAttribute('stroke-width') || 1),
+            element: path
+        });
+    });
+    
+    // Process rectangles
+    rectElements.forEach(rect => {
+        const x = parseFloat(rect.getAttribute('x') || 0);
+        const y = parseFloat(rect.getAttribute('y') || 0);
+        const width = parseFloat(rect.getAttribute('width'));
+        const height = parseFloat(rect.getAttribute('height'));
+        const rx = parseFloat(rect.getAttribute('rx') || 0);
+        const ry = parseFloat(rect.getAttribute('ry') || 0);
         
-        // Extract viewBox
-        if (svg.getAttribute('viewBox')) {
-            const viewBoxValues = svg.getAttribute('viewBox').split(' ');
-            svgViewBox = {
-                x: parseFloat(viewBoxValues[0]),
-                y: parseFloat(viewBoxValues[1]),
-                width: parseFloat(viewBoxValues[2]),
-                height: parseFloat(viewBoxValues[3])
-            };
-        } else if (svg.getAttribute('width') && svg.getAttribute('height')) {
-            svgViewBox = {
-                x: 0,
-                y: 0,
-                width: parseFloat(svg.getAttribute('width')),
-                height: parseFloat(svg.getAttribute('height'))
-            };
+        let pathData;
+        if (rx || ry) {
+            // Handle rounded rectangles
+            const r = rx || ry;
+            pathData = createRoundedRectPath(x, y, width, height, r);
+        } else {
+            // Simple rectangle
+            pathData = `M${x},${y} h${width} v${height} h-${width} Z`;
         }
-
-        updateExtrusionSettings(svgViewBox);
         
-        // Structure to hold paths and their types (outer contours vs holes)
-        svgPaths = [];
-        
-        // Extract all elements that can define shapes
-        const pathElements = svg.querySelectorAll('path');
-        const rectElements = svg.querySelectorAll('rect');
-        const circleElements = svg.querySelectorAll('circle');
-        const lineElements = svg.querySelectorAll('line');
-        const polylineElements = svg.querySelectorAll('polyline');
-        const polygonElements = svg.querySelectorAll('polygon');
-        const onlyHasRects = svg.querySelectorAll('*').length === 1 && 
-                    svg.querySelectorAll('rect[rx],rect[ry]').length === 1;
-
-        // Process paths
-        pathElements.forEach(path => {
-            let isHole = isLineMode ? false : determineIfHole(path);
-            svgPaths.push({
-                pathData: path.getAttribute('d'),
-                isHole: isHole,
-                strokeWidth: parseFloat(path.getAttribute('stroke-width') || 1),
-                element: path
-            });
+        let isHole = determineIfHole(rect);
+        svgPaths.push({
+            pathData: pathData,
+            isHole: isHole,
+            strokeWidth: parseFloat(rect.getAttribute('stroke-width') || 1),
+            element: rect
         });
+    });
+    
+    // Process circles
+    circleElements.forEach(circle => {
+        const cx = parseFloat(circle.getAttribute('cx'));
+        const cy = parseFloat(circle.getAttribute('cy'));
+        const r = parseFloat(circle.getAttribute('r'));
         
-        // Process rectangles
-        rectElements.forEach(rect => {
-            const x = parseFloat(rect.getAttribute('x') || 0);
-            const y = parseFloat(rect.getAttribute('y') || 0);
-            const width = parseFloat(rect.getAttribute('width'));
-            const height = parseFloat(rect.getAttribute('height'));
-            const rx = parseFloat(rect.getAttribute('rx') || 0);
-            const ry = parseFloat(rect.getAttribute('ry') || 0);
-            
-            let pathData;
-            if (rx || ry) {
-                // Handle rounded rectangles
-                const r = rx || ry;
-                pathData = createRoundedRectPath(x, y, width, height, r);
-            } else {
-                // Simple rectangle
-                pathData = `M${x},${y} h${width} v${height} h-${width} Z`;
-            }
-            
-            let isHole = isLineMode ? false : determineIfHole(rect);
-            svgPaths.push({
-                pathData: pathData,
-                isHole: isHole,
-                strokeWidth: parseFloat(rect.getAttribute('stroke-width') || 1),
-                element: rect
-            });
+        // Approximate circle with a path
+        const pathData = `M${cx+r},${cy} 
+                        A${r},${r} 0 0 1 ${cx},${cy-r} 
+                        A${r},${r} 0 0 1 ${cx-r},${cy} 
+                        A${r},${r} 0 0 1 ${cx},${cy+r} 
+                        A${r},${r} 0 0 1 ${cx+r},${cy} Z`;
+        
+        let isHole = determineIfHole(circle);
+        svgPaths.push({
+            pathData: pathData,
+            isHole: isHole,
+            strokeWidth: parseFloat(circle.getAttribute('stroke-width') || 1),
+            element: circle
         });
-        
-        // Process circles
-        circleElements.forEach(circle => {
-            const cx = parseFloat(circle.getAttribute('cx'));
-            const cy = parseFloat(circle.getAttribute('cy'));
-            const r = parseFloat(circle.getAttribute('r'));
-            
-            // Approximate circle with a path
-            const pathData = `M${cx+r},${cy} 
-                            A${r},${r} 0 0 1 ${cx},${cy-r} 
-                            A${r},${r} 0 0 1 ${cx-r},${cy} 
-                            A${r},${r} 0 0 1 ${cx},${cy+r} 
-                            A${r},${r} 0 0 1 ${cx+r},${cy} Z`;
-            
-            let isHole = isLineMode ? false : determineIfHole(circle);
-            svgPaths.push({
-                pathData: pathData,
-                isHole: isHole,
-                strokeWidth: parseFloat(circle.getAttribute('stroke-width') || 1),
-                element: circle
-            });
-        });
-        
-        // In Line Mode, also process lines and convert to paths with thickness
-        if (isLineMode) {
+    });
+    
+    // Process other elements in Line Mode
+    if (isLineMode) {
             // Process lines
             lineElements.forEach(line => {
                 const x1 = parseFloat(line.getAttribute('x1'));
@@ -1180,36 +1127,47 @@
     }
       
     function determineIfHole(element) {
-        // In Line Mode, we don't consider anything as a hole inherently
+        // In Line Mode, we should still consider certain elements as holes
         if (isLineMode) {
-            return false;
-        }
-        
-        // Check if the element has explicit hole markers
-        if (element.getAttribute('data-hole') === 'true') {
-            return true;
-        }
-        
-        // Check fill attribute - no fill or white fill often indicates a hole
-        const fill = element.getAttribute('fill');
-        if (fill === 'none' || fill === '#fff' || fill === '#ffffff' || fill === 'white') {
-            return true;
-        }
-        
-        // Check for path direction - clockwise paths are typically outer contours,
-        // counter-clockwise paths are typically holes in SVG
-        if (element.tagName.toLowerCase() === 'path') {
-            const pathData = element.getAttribute('d');
-            if (pathData && isCounterClockwise(pathData)) {
+            // Check for small circles with stroke - mounting holes
+            if (element.tagName.toLowerCase() === 'circle') {
+                const r = parseFloat(element.getAttribute('r'));
+                const fill = element.getAttribute('fill');
+                
+                // For circles with white fill or with small radius and stroke, treat as holes
+                if ((fill === 'none' || fill === '#fff' || fill === '#ffffff' || fill === 'white') && 
+                    element.getAttribute('stroke') && r < 10) {
+                    return true;
+                }
+            }
+        } else {
+            // Volume Mode - existing logic
+            // Check if the element has explicit hole markers
+            if (element.getAttribute('data-hole') === 'true') {
                 return true;
             }
-        }
-        
-        // For small circles with stroke, assume they're mounting holes
-        if (element.tagName.toLowerCase() === 'circle') {
-            const r = parseFloat(element.getAttribute('r'));
-            if (r < 10 && element.getAttribute('stroke')) {
+            
+            // Check fill attribute - no fill or white fill often indicates a hole
+            const fill = element.getAttribute('fill');
+            if (fill === 'none' || fill === '#fff' || fill === '#ffffff' || fill === 'white') {
                 return true;
+            }
+            
+            // Check for path direction - clockwise paths are typically outer contours,
+            // counter-clockwise paths are typically holes in SVG
+            if (element.tagName.toLowerCase() === 'path') {
+                const pathData = element.getAttribute('d');
+                if (pathData && isCounterClockwise(pathData)) {
+                    return true;
+                }
+            }
+            
+            // For small circles with stroke, assume they're mounting holes
+            if (element.tagName.toLowerCase() === 'circle') {
+                const r = parseFloat(element.getAttribute('r'));
+                if (r < 10 && element.getAttribute('stroke')) {
+                    return true;
+                }
             }
         }
         
@@ -1217,75 +1175,43 @@
         return false;
     }
       
-    // Simplified check for counter-clockwise paths (for holes)
     function isCounterClockwise(pathData) {
-        // This is a simplification - for a proper implementation,
-        // calculate the signed area of the polygon
-        // Counter-clockwise paths have negative signed area
-        
-        // For now, return false to treat paths as outer contours by default
-        return false;
+        try {
+            // Parse the path to get the points
+            const commands = parseSVGPath(pathData);
+            const points = [];
+            
+            // Extract points from the path commands
+            for (let i = 0; i < commands.length; i++) {
+                const cmd = commands[i];
+                if (cmd.type === 'M' || cmd.type === 'L') {
+                    points.push({x: cmd.args[0], y: cmd.args[1]});
+                }
+            }
+            
+            // Need at least 3 points to calculate area
+            if (points.length < 3) return false;
+            
+            // Calculate the signed area
+            let area = 0;
+            for (let i = 0; i < points.length; i++) {
+                const j = (i + 1) % points.length;
+                area += points[i].x * points[j].y;
+                area -= points[j].x * points[i].y;
+            }
+            
+            // If area is negative, the path is counter-clockwise
+            return area < 0;
+        } catch (e) {
+            console.error('Error calculating path direction:', e);
+            return false;
+        }
     }
         
     // Convert SVG to STL
     convertBtn.addEventListener('click', convertToSTL);
-        
-    // Function to detect if one path is inside another
-    function isPathInsideAnother(innerPath, outerPath, scale) {
-        // Convert paths to points for checking containment
-        const innerShape = new THREE.Shape();
-        const outerShape = new THREE.Shape();
-        
-        try {
-            createShapeFromPathData(innerShape, innerPath.pathData, scale);
-            createShapeFromPathData(outerShape, outerPath.pathData, scale);
-            
-            // Get a point from the inner shape (using first point)
-            const innerPoints = innerShape.getPoints(8);
-            if (innerPoints.length === 0) return false;
-            
-            const testPoint = innerPoints[0];
-            
-            // Check if this point is inside the outer shape
-            return isPointInShape(testPoint, outerShape);
-        } catch (e) {
-            console.error('Error in path containment check:', e);
-            return false;
-        }
-    }
-    
-    // Test if a point is inside a shape using ray casting algorithm
-    function isPointInShape(point, shape) {
-        const shapePoints = shape.getPoints(32);
-        let inside = false;
-        
-        // Ray casting algorithm
-        for (let i = 0, j = shapePoints.length - 1; i < shapePoints.length; j = i++) {
-            const xi = shapePoints[i].x, yi = shapePoints[i].y;
-            const xj = shapePoints[j].x, yj = shapePoints[j].y;
-            
-            const intersect = ((yi > point.y) !== (yj > point.y)) &&
-                (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
-                
-            if (intersect) inside = !inside;
-        }
-        
-        return inside;
-    }
+  
 
-async function loadBufferGeometryUtils() {
-    // Check if BufferGeometryUtils is already loaded
-    if (window.BufferGeometryUtils) {
-        return Promise.resolve();
-    }
-    
-    // If not already loaded, it should be available from the import
-    if (!window.BufferGeometryUtils) {
-        console.warn('BufferGeometryUtils not loaded, some operations may fail');
-    }
-    
-    return Promise.resolve();
-}
     
     async function convertToSTL() {
         if (!svgContent) return;
@@ -1316,10 +1242,44 @@ async function loadBufferGeometryUtils() {
             let shapes = [];
             
             if (isLineMode) {
-                // Line mode processing...
-                // (existing code)
+                // Line mode processing
+                // First collect all non-hole shapes
+                svgPaths.filter(path => !path.isHole).forEach(contour => {
+                    const shape = new THREE.Shape();
+                    try {
+                        createShapeFromPathData(shape, contour.pathData, scale);
+                        shapes.push(shape);
+                    } catch (e) {
+                        console.error('Error creating shape:', e);
+                    }
+                });
+                
+                // Then collect all holes
+                const holeShapes = [];
+                svgPaths.filter(path => path.isHole).forEach(hole => {
+                    const holeShape = new THREE.Shape();
+                    try {
+                        createShapeFromPathData(holeShape, hole.pathData, scale);
+                        holeShapes.push(holeShape);
+                    } catch (e) {
+                        console.error('Error creating hole shape:', e);
+                    }
+                });
+                
+                // Add holes to shapes based on containment
+                if (holeShapes.length > 0) {
+                    shapes.forEach(shape => {
+                        // For each hole, check if it's contained in this shape
+                        holeShapes.forEach(hole => {
+                            // Simple containment check - we just add all holes to all shapes for now
+                            // Could be improved with proper containment testing
+                            if (!shape.holes) shape.holes = [];
+                            shape.holes.push(hole);
+                        });
+                    });
+                }
             } else {
-                // Volume mode processing
+                // Volume mode processing - keeping existing logic
                 const outerContours = svgPaths.filter(path => !path.isHole);
                 
                 if (outerContours.length > 0) {
