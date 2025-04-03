@@ -1671,28 +1671,28 @@
         }
     });
 
-        function loadBufferGeometryUtils() {
-    return new Promise((resolve, reject) => {
-        if (typeof THREE !== 'undefined' && THREE.BufferGeometryUtils) {
-            console.log('BufferGeometryUtils already loaded');
-            resolve();
-            return;
-        }
-        
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/utils/BufferGeometryUtils.js';
-        script.async = true;
-        script.onload = () => {
-            console.log('BufferGeometryUtils loaded successfully');
-            resolve();
-        };
-        script.onerror = () => {
-            console.error('Failed to load BufferGeometryUtils');
-            reject(new Error('Failed to load BufferGeometryUtils'));
-        };
-        document.body.appendChild(script);
-    });
-}
+    function loadBufferGeometryUtils() {
+        return new Promise((resolve, reject) => {
+            if (typeof THREE !== 'undefined' && THREE.BufferGeometryUtils) {
+                console.log('BufferGeometryUtils already loaded');
+                resolve();
+                return;
+            }
+            
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/three-buffer-geometry-utils@latest/index.min.js';
+            script.async = true;
+            script.onload = () => {
+                console.log('BufferGeometryUtils loaded successfully');
+                resolve();
+            };
+            script.onerror = () => {
+                console.error('Failed to load BufferGeometryUtils');
+                reject(new Error('Failed to load BufferGeometryUtils'));
+            };
+            document.body.appendChild(script);
+        });
+    }
     </script>
 </body>
 </html>
