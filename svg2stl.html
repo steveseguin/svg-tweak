@@ -245,12 +245,15 @@
         </div>
     </div>
 
-    <!-- Load dependencies -->
     <script type="module">
         import * as THREE from 'https://cdn.jsdelivr.net/npm/three@latest/build/three.module.js';
-        import {OrbitControls} from 'https://cdn.jsdelivr.net/npm/three@latest/examples/jsm/controls/OrbitControls.js';
-        import * as BufferGeometryUtils from 'https://cdn.jsdelivr.net/npm/three@latest/examples/jsm/utils/BufferGeometryUtils.js';
-    
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@latest/examples/jsm/controls/OrbitControls.js';
+        import { BufferGeometryUtils } from 'https://cdn.jsdelivr.net/npm/three@latest/examples/jsm/utils/BufferGeometryUtils.js';
+        
+        // Make THREE available globally
+        window.THREE = THREE;
+        window.OrbitControls = OrbitControls;
+        window.BufferGeometryUtils = BufferGeometryUtils;
     </script>
     
     <script>
@@ -1249,6 +1252,20 @@
         
         return inside;
     }
+
+async function loadBufferGeometryUtils() {
+    // Check if BufferGeometryUtils is already loaded
+    if (window.BufferGeometryUtils) {
+        return Promise.resolve();
+    }
+    
+    // If not already loaded, it should be available from the import
+    if (!window.BufferGeometryUtils) {
+        console.warn('BufferGeometryUtils not loaded, some operations may fail');
+    }
+    
+    return Promise.resolve();
+}
     
     async function convertToSTL() {
         if (!svgContent) return;
@@ -1482,10 +1499,13 @@
         
         // Merge geometries if multiple exist
         let mergedGeometry;
-        if (geometries.length > 1 && THREE.BufferGeometryUtils) {
-            mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries);
-        } else {
+        if (geometries.length > 1 && window.BufferGeometryUtils) {
+            mergedGeometry = window.BufferGeometryUtils.mergeBufferGeometries(geometries);
+        } else if (geometries.length > 0) {
             mergedGeometry = geometries[0];
+        } else {
+            console.error('No geometries found to merge');
+            return createFallbackSTL();
         }
         
         if (!mergedGeometry) {
@@ -1495,7 +1515,8 @@
         
         // Make sure the geometry is a BufferGeometry for STL export
         if (!(mergedGeometry instanceof THREE.BufferGeometry)) {
-            mergedGeometry = new THREE.BufferGeometry().fromGeometry(mergedGeometry);
+            console.error('Expected a BufferGeometry');
+            return createFallbackSTL();
         }
         
         // Get position attribute from geometry
