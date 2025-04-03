@@ -916,14 +916,14 @@
     
     // Calculate appropriate extrusion height range based on SVG dimensions
     const maxDimension = Math.max(viewBox.width, viewBox.height);
-    const defaultHeight = Math.max(0.0001, maxDimension * 0.00025); // 5% of max dimension
+    const defaultHeight = Math.max(0.0001, maxDimension * 0.001); // 5% of max dimension
     
     // Update extrusion height slider
     const extrusionHeightSlider = document.getElementById('extrusion-height');
     const extrusionHeightValue = document.getElementById('extrusion-height').nextElementSibling;
     
     //extrusionHeightSlider.min = "0.1";
-    extrusionHeightSlider.max = (maxDimension * 0.005); // 50% of max dimension
+    extrusionHeightSlider.max = (maxDimension * 0.1);
     extrusionHeightSlider.value = defaultHeight;
     extrusionHeightValue.value = defaultHeight;
     
