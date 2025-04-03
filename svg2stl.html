@@ -132,8 +132,8 @@
             <h3>Extrusion Settings</h3>
             <div class="settings-row">
                 <label class="settings-label" for="extrusion-height">Extrusion Height:</label>
-                <input type="range" id="extrusion-height" min="1" max="50" value="10" oninput="this.nextElementSibling.value = this.value">
-                <input type="number" min="1" max="50" value="10" oninput="this.previousElementSibling.value = this.value">
+                <input type="range" id="extrusion-height" min="0.00001" step="0.001" max="50" value="1" oninput="this.nextElementSibling.value = this.value">
+                <input type="number" min="0.00001"  max="50" value="1" oninput="this.previousElementSibling.value = this.value">
             </div>
             <div class="settings-row">
                 <label class="settings-label" for="base-thickness">Base Thickness:</label>
