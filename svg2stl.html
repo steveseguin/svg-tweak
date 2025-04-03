@@ -576,8 +576,8 @@
                             const startX = currentPoint.x;
                             const startY = currentPoint.y; // Already in Three.js Y-up system
     
-                            const rx = Math.abs(args[0] * scale); // Apply scale
-                            const ry = Math.abs(args[1] * scale); // Apply scale
+                            let rx = Math.abs(args[0] * scale); // Apply scale
+                            let ry = Math.abs(args[1] * scale); // Apply scale
                             const xAxisRotationRad = args[2] * Math.PI / 180; // Keep radians
                             const largeArcFlag = args[3] ? 1 : 0;
                             const sweepFlag = args[4] ? 1 : 0;
