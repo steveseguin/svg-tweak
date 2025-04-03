@@ -107,6 +107,55 @@
             margin-left: 10px;
             padding: 3px;
         }
+        /* New styles for mode toggle */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            margin: 15px 0;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 28px;
+            margin: 0 10px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #4CAF50;
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(32px);
+        }
+        .toggle-label {
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -129,6 +178,19 @@
         </div>
         
         <div class="settings">
+            <h3>Conversion Mode</h3>
+            <div class="toggle-container">
+                <span class="toggle-label">Volume Mode</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="mode-toggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">Line Mode</span>
+            </div>
+            <p id="mode-description" style="margin-top: 5px; font-size: 14px; color: #666;">
+                Volume Mode: Filled areas become solid, empty areas become holes.
+            </p>
+            
             <h3>Extrusion Settings</h3>
             <div class="settings-row">
                 <label class="settings-label" for="extrusion-height">Extrusion Height:</label>
@@ -177,6 +239,8 @@
         const downloadBtn = document.getElementById('download-btn');
         const svgPreview = document.getElementById('svg-preview');
         const stlPreview = document.getElementById('stl-preview');
+        const modeToggle = document.getElementById('mode-toggle');
+        const modeDescription = document.getElementById('mode-description');
         
         // State variables
         let svgContent = null;
@@ -184,6 +248,22 @@
         let svgPaths = [];
         let svgViewBox = { x: 0, y: 0, width: 100, height: 100 };
         let scene = null; // Global scene reference
+        let isLineMode = false; // Default to Volume Mode
+        
+        // Mode toggle event listener
+        modeToggle.addEventListener('change', function() {
+            isLineMode = this.checked;
+            if (isLineMode) {
+                modeDescription.textContent = 'Line Mode: Lines are treated as boundaries, thickness is ignored.';
+            } else {
+                modeDescription.textContent = 'Volume Mode: Filled areas become solid, empty areas become holes.';
+            }
+            
+            // Re-parse SVG if we have content
+            if (svgContent) {
+                parseSVG(svgContent);
+            }
+        });
         
         // SVG Textarea toggle
         function toggleSvgTextarea() {
@@ -286,8 +366,6 @@
                 svgElement.style.height = '100%';
             }
         }
-        
-        
         
         // Helper function to create path data for rounded rectangle
         function createRoundedRectPath(x, y, width, height, radius) {
@@ -441,512 +519,652 @@
             };
         }
 
-          updateExtrusionSettings(svgViewBox)
-            
-            // Structure to hold paths and their types (outer contours vs holes)
-            svgPaths = [];
-            
-            // Extract paths and determine if they're outer contours or holes
-            const paths = svg.querySelectorAll('path');
-            paths.forEach(path => {
-                const isHole = determineIfHole(path);
-                svgPaths.push({
-                    pathData: path.getAttribute('d'),
-                    isHole: isHole
-                });
-            });
-            
-            // Handle rectangles
-            const rects = svg.querySelectorAll('rect');
-            rects.forEach(rect => {
-                const x = parseFloat(rect.getAttribute('x') || 0);
-                const y = parseFloat(rect.getAttribute('y') || 0);
-                const width = parseFloat(rect.getAttribute('width'));
-                const height = parseFloat(rect.getAttribute('height'));
-                const rx = parseFloat(rect.getAttribute('rx') || 0);
-                const ry = parseFloat(rect.getAttribute('ry') || 0);
-                
-                let pathData;
-                if (rx || ry) {
-                    // Handle rounded rectangles
-                    const r = rx || ry;
-                    pathData = createRoundedRectPath(x, y, width, height, r);
-                } else {
-                    // Simple rectangle
-                    pathData = `M${x},${y} h${width} v${height} h-${width} Z`;
-                }
-                
-                const isHole = determineIfHole(rect);
-                svgPaths.push({
-                    pathData: pathData,
-                    isHole: isHole
-                });
-            });
-            
-            // Handle circles
-            const circles = svg.querySelectorAll('circle');
-            circles.forEach(circle => {
-                const cx = parseFloat(circle.getAttribute('cx'));
-                const cy = parseFloat(circle.getAttribute('cy'));
-                const r = parseFloat(circle.getAttribute('r'));
-                
-                // Approximate circle with a path
-                const pathData = `M${cx + r},${cy} 
-                                A${r},${r} 0 0 1 ${cx},${cy-r} 
-                                A${r},${r} 0 0 1 ${cx-r},${cy} 
-                                A${r},${r} 0 0 1 ${cx},${cy+r} 
-                                A${r},${r} 0 0 1 ${cx+r},${cy} Z`;
-                
-                const isHole = determineIfHole(circle);
-                svgPaths.push({
-                    pathData: pathData,
-                    isHole: isHole
-                });
-            });
-            
-            console.log('Parsed SVG with', svgPaths.length, 'paths/shapes');
-            console.log('Holes:', svgPaths.filter(p => p.isHole).length);
-            console.log('Outer contours:', svgPaths.filter(p => !p.isHole).length);
-        }
-      // Parse SVG path data string into commands
-      function parseSVGPath(pathData) {
-          const commands = [];
-          const pathParser = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
-          let match;
-          
-          while ((match = pathParser.exec(pathData)) !== null) {
-              const type = match[1];
-              const argsStr = match[2].trim();
-              let args = [];
-              
-              if (argsStr) {
-                  // Handle both comma and space separated values
-                  args = argsStr.replace(/,/g, ' ')
-                              .split(/\s+/)
-                              .map(parseFloat)
-                              .filter(arg => !isNaN(arg));
-              }
-              
-              commands.push({ type, args });
-          }
-          
-          return commands;
-      }
-      
-      // Create points to approximate an arc
-      function approximateArc(x1, y1, rx, ry, angle, largeArcFlag, sweepFlag, x2, y2) {
-          // Convert angle from degrees to radians
-          angle = angle * Math.PI / 180;
-          
-          // Simple approximation - just return end point for now
-          // For a more accurate implementation, additional math would be needed
-          return [{ x: x2, y: y2 }];
-      }
-      
-      function determineIfHole(element) {
-          // Check if the element has explicit hole markers
-          if (element.getAttribute('data-hole') === 'true') {
-              return true;
-          }
-          
-          // Check fill attribute - no fill or white fill often indicates a hole
-          const fill = element.getAttribute('fill');
-          if (fill === 'none' || fill === '#fff' || fill === '#ffffff' || fill === 'white') {
-              return true;
-          }
-          
-          // Check for path direction - clockwise paths are typically outer contours,
-          // counter-clockwise paths are typically holes in SVG
-          if (element.tagName.toLowerCase() === 'path') {
-              const pathData = element.getAttribute('d');
-              if (pathData && isCounterClockwise(pathData)) {
-                  return true;
-              }
-          }
-          
-          // For small circles with stroke, assume they're mounting holes
-          if (element.tagName.toLowerCase() === 'circle') {
-              const r = parseFloat(element.getAttribute('r'));
-              if (r < 10 && element.getAttribute('stroke')) {
-                  return true;
-              }
-          }
-          
-          // Default to not being a hole
-          return false;
-      }
-      
-      // Simplified check for counter-clockwise paths (for holes)
-      function isCounterClockwise(pathData) {
-          // This is a simplification - for a proper implementation,
-          // calculate the signed area of the polygon
-          // Counter-clockwise paths have negative signed area
-          
-          // For now, return false to treat paths as outer contours by default
-          return false;
-      }
+        updateExtrusionSettings(svgViewBox);
         
-        // Convert SVG to STL
-        convertBtn.addEventListener('click', convertToSTL);
+        // Structure to hold paths and their types (outer contours vs holes)
+        svgPaths = [];
         
-        function convertToSTL() {
-    if (!svgContent) return;
-    
-    const extrusionHeight = parseFloat(document.getElementById('extrusion-height').value);
-    const baseThickness = parseFloat(document.getElementById('base-thickness').value);
-    const resolution = parseFloat(document.getElementById('resolution').value);
-    
-    // Initialize Three.js scene
-    scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(stlPreview.clientWidth, stlPreview.clientHeight);
-    renderer.setClearColor(0xf0f0f0);
-    
-    // Clear previous preview
-    stlPreview.innerHTML = '';
-    stlPreview.appendChild(renderer.domElement);
-    
-    // Scale factor to fit the SVG to the preview
-    const scale = 0.5 / Math.max(svgViewBox.width, svgViewBox.height);
-    
-    // Process all outer contours as separate shapes
-    const outerContours = svgPaths.filter(path => !path.isHole);
-    const shapes = [];
-    
-    if (outerContours.length > 0) {
-        // Create shapes from all outer contours
-        outerContours.forEach(contour => {
-            const shape = new THREE.Shape();
-            try {
-                createShapeFromPathData(shape, contour.pathData, scale);
-                
-                // Find holes that belong to this contour
-                const holes = svgPaths.filter(path => path.isHole).map(holePath => {
-                    const hole = new THREE.Shape();
-                    createShapeFromPathData(hole, holePath.pathData, scale);
-                    return hole;
-                });
-                
-                // Add holes to the shape
-                shape.holes = holes;
-                shapes.push(shape);
-            } catch (e) {
-                console.error('Error creating shape:', e);
-            }
-        });
-    }
-    
-    // If no valid shapes were created, use a fallback
-    if (shapes.length === 0) {
-        const fallbackShape = new THREE.Shape();
-        createFallbackShape(fallbackShape);
-        shapes.push(fallbackShape);
-    }
-    
-    // Create a group to hold all the extruded meshes
-    const group = new THREE.Group();
-    
-    // Extrusion settings for solid model
-    const extrudeSettings = {
-        steps: 1,
-        depth: extrusionHeight,
-        bevelEnabled: false
-    };
-    
-    // Create extruded geometries for all shapes
-    shapes.forEach(shape => {
-        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x2194ce,
-            side: THREE.DoubleSide
+        // Extract all elements that can define shapes
+        const pathElements = svg.querySelectorAll('path');
+        const rectElements = svg.querySelectorAll('rect');
+        const circleElements = svg.querySelectorAll('circle');
+        const lineElements = svg.querySelectorAll('line');
+        const polylineElements = svg.querySelectorAll('polyline');
+        const polygonElements = svg.querySelectorAll('polygon');
+        
+        // Process paths
+        pathElements.forEach(path => {
+            let isHole = isLineMode ? false : determineIfHole(path);
+            svgPaths.push({
+                pathData: path.getAttribute('d'),
+                isHole: isHole,
+                strokeWidth: parseFloat(path.getAttribute('stroke-width') || 1),
+                element: path
+            });
         });
         
-        const mesh = new THREE.Mesh(geometry, material);
-        group.add(mesh);
-    });
-    
-    scene.add(group);
-    
-    // Center the model
-    const box = new THREE.Box3().setFromObject(group);
-    const center = box.getCenter(new THREE.Vector3());
-    group.position.set(-center.x, -center.y, -extrusionHeight/2);
-    
-    // Add lighting
-    const ambientLight = new THREE.AmbientLight(0x404040);
-    scene.add(ambientLight);
-    
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(1, 1, 1);
-    scene.add(directionalLight);
-    
-    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
-    directionalLight2.position.set(-1, -1, 1);
-    scene.add(directionalLight2);
-    
-    // Position camera to better frame the model
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const fov = camera.fov * (Math.PI / 180);
-    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-    
-    // Add some margin
-    cameraZ *= 1.5;
-    
-    camera.position.z = cameraZ;
-    
-    // Set up orbit controls for better preview interaction
-    setupOrbitControls(camera, renderer);
-    
-    // Enable download button
-    downloadBtn.disabled = false;
-    
-    // Generate binary STL data
-    generateSTLData(group);
-}
+        // Process rectangles
+        rectElements.forEach(rect => {
+            const x = parseFloat(rect.getAttribute('x') || 0);
+            const y = parseFloat(rect.getAttribute('y') || 0);
+            const width = parseFloat(rect.getAttribute('width'));
+            const height = parseFloat(rect.getAttribute('height'));
+            const rx = parseFloat(rect.getAttribute('rx') || 0);
+            const ry = parseFloat(rect.getAttribute('ry') || 0);
+            
+            let pathData;
+            if (rx || ry) {
+                // Handle rounded rectangles
+                const r = rx || ry;
+                pathData = createRoundedRectPath(x, y, width, height, r);
+            } else {
+                // Simple rectangle
+                pathData = `M${x},${y} h${width} v${height} h-${width} Z`;
+            }
+            
+            let isHole = isLineMode ? false : determineIfHole(rect);
+            svgPaths.push({
+                pathData: pathData,
+                isHole: isHole,
+                strokeWidth: parseFloat(rect.getAttribute('stroke-width') || 1),
+                element: rect
+            });
+        });
         
-        // Helper to set up orbit controls
-        function setupOrbitControls(camera, renderer) {
-    // Cancel any previous animations first
-    if (window.previousAnimationFrameId) {
-        cancelAnimationFrame(window.previousAnimationFrameId);
-    }
-    
-    let animationFrameId;
-    
-    if (typeof THREE.OrbitControls !== 'undefined') {
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.25;
-        controls.enableZoom = true;
-        controls.zoomSpeed = 1.2;
-        controls.enablePan = true;
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 1.0;
-        controls.minDistance = 1;
-        controls.maxDistance = 1000;
+        // Process circles
+        circleElements.forEach(circle => {
+            const cx = parseFloat(circle.getAttribute('cx'));
+            const cy = parseFloat(circle.getAttribute('cy'));
+            const r = parseFloat(circle.getAttribute('r'));
+            
+            // Approximate circle with a path
+            const pathData = `M${cx+r},${cy} 
+                            A${r},${r} 0 0 1 ${cx},${cy-r} 
+                            A${r},${r} 0 0 1 ${cx-r},${cy} 
+                            A${r},${r} 0 0 1 ${cx},${cy+r} 
+                            A${r},${r} 0 0 1 ${cx+r},${cy} Z`;
+            
+            let isHole = isLineMode ? false : determineIfHole(circle);
+            svgPaths.push({
+                pathData: pathData,
+                isHole: isHole,
+                strokeWidth: parseFloat(circle.getAttribute('stroke-width') || 1),
+                element: circle
+            });
+        });
         
-        // Add instruction div if it doesn't exist
-        let instructionDiv = stlPreview.querySelector('.controls-info');
-        if (!instructionDiv) {
-            instructionDiv = document.createElement('div');
-            instructionDiv.className = 'controls-info';
-            instructionDiv.style.position = 'absolute';
-            instructionDiv.style.bottom = '10px';
-            instructionDiv.style.left = '50%';
-            instructionDiv.style.transform = 'translateX(-50%)';
-            instructionDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
-            instructionDiv.style.color = 'white';
-            instructionDiv.style.padding = '5px 10px';
-            instructionDiv.style.borderRadius = '4px';
-            instructionDiv.style.fontSize = '12px';
-            instructionDiv.style.pointerEvents = 'none';
-            instructionDiv.textContent = 'Left click: Rotate | Right click: Pan | Scroll: Zoom';
-            stlPreview.appendChild(instructionDiv);
-        }
-        
-        function animate() {
-            animationFrameId = requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
-        }
-        animate();
-    } else {
-        function animate() {
-            animationFrameId = requestAnimationFrame(animate);
-            scene.rotation.x += 0.005;
-            scene.rotation.y += 0.005;
-            renderer.render(scene, camera);
-        }
-        animate();
-    }
-    
-    // Store animation reference globally to allow cancellation on next conversion
-    window.previousAnimationFrameId = animationFrameId;
-    
-    // Clean up on window unload
-    window.addEventListener('unload', () => {
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-        }
-    });
-}
-        
-        // Create a simple fallback shape if parsing fails
-        function createFallbackShape(shape) {
-            shape.moveTo(-30, -20);
-            shape.lineTo(30, -20);
-            shape.lineTo(30, 20);
-            shape.lineTo(-30, 20);
-            shape.lineTo(-30, -20);
-        }
-        
-        
-        function generateSTLData(group) {
-            try {
-                // Combine all geometries in the group
-                const geometries = [];
-                group.traverse(child => {
-                    if (child instanceof THREE.Mesh) {
-                        geometries.push(child.geometry);
-                    }
+        // In Line Mode, also process lines and convert to paths with thickness
+        if (isLineMode) {
+            // Process lines
+            lineElements.forEach(line => {
+                const x1 = parseFloat(line.getAttribute('x1'));
+                const y1 = parseFloat(line.getAttribute('y1'));
+                const x2 = parseFloat(line.getAttribute('x2'));
+                const y2 = parseFloat(line.getAttribute('y2'));
+                const strokeWidth = parseFloat(line.getAttribute('stroke-width') || 1);
+                
+                // Create a path from the line with thickness
+                const pathData = createLinePathWithThickness(x1, y1, x2, y2, strokeWidth);
+                
+                svgPaths.push({
+                    pathData: pathData,
+                    isHole: false,
+                    strokeWidth: strokeWidth,
+                    element: line
                 });
+            });
+            
+            // Process polylines
+            polylineElements.forEach(polyline => {
+                const points = polyline.getAttribute('points').trim().split(/\s+|,/);
+                const strokeWidth = parseFloat(polyline.getAttribute('stroke-width') || 1);
                 
-                if (geometries.length === 0) {
-                    console.error('No geometries found in group');
-                    return createFallbackSTL();
-                }
-                
-                // Merge geometries if multiple exist
-                let mergedGeometry;
-                if (geometries.length > 1) {
-                    mergedGeometry = BufferGeometryUtils.mergeBufferGeometries(geometries);
-                } else {
-                    mergedGeometry = geometries[0];
-                }
-                
-                // The variable 'geometry' is undefined, should be 'mergedGeometry'
-                if (!mergedGeometry) {
-                    console.error('No geometry provided for STL generation');
-                    return createFallbackSTL();
-                }
-                
-                // Make sure the geometry is a BufferGeometry for STL export
-                if (!(mergedGeometry instanceof THREE.BufferGeometry)) {
-                    mergedGeometry = new THREE.BufferGeometry().fromGeometry(mergedGeometry);
-                }
-                
-                // Get position attribute from geometry
-                const positionAttribute = mergedGeometry.getAttribute('position');
-                if (!positionAttribute) {
-                    console.error('Geometry has no position attribute');
-                    return createFallbackSTL();
-                }
-                
-                // Get normal attribute or compute it if not present
-                let normalAttribute = mergedGeometry.getAttribute('normal');
-                if (!normalAttribute) {
-                    mergedGeometry.computeVertexNormals();
-                    normalAttribute = mergedGeometry.getAttribute('normal');
-                }
-                
-                // Count triangles
-                const numTriangles = positionAttribute.count / 3;
-                if (numTriangles <= 0) {
-                    console.error('No triangles in geometry');
-                    return createFallbackSTL();
-                }
-                
-                console.log(`Generating STL with ${numTriangles} triangles`);
-                
-                // Create STL binary file
-                const headerSize = 80;
-                const header = new Uint8Array(headerSize);
-                // We could add a text header here if desired
-                
-                // Calculate the size of the file
-                // Header (80 bytes) + Triangle count (4 bytes) + Triangles (50 bytes each)
-                const dataSize = 50 * numTriangles;
-                const buffer = new ArrayBuffer(headerSize + 4 + dataSize);
-                const dataView = new DataView(buffer);
-                
-                // Fill header (80 bytes)
-                const encoder = new TextEncoder();
-                const headerText = "SVG to STL conversion by SVG to STL Converter";
-                const headerBytes = encoder.encode(headerText);
-                for (let i = 0; i < Math.min(headerBytes.length, headerSize); i++) {
-                    dataView.setUint8(i, headerBytes[i]);
-                }
-                
-                // Write the number of triangles (4 bytes, little-endian)
-                dataView.setUint32(headerSize, numTriangles, true);
-                
-                // Offset for writing triangle data (after header and triangle count)
-                let offset = headerSize + 4;
-                
-                // Position and normal arrays
-                const positions = positionAttribute.array;
-                const normals = normalAttribute.array;
-                
-                // For each triangle
-                for (let i = 0; i < numTriangles; i++) {
-                    const index = i * 9; // 3 vertices per triangle, 3 components (x,y,z) per vertex
+                // Create a path from the polyline with thickness
+                let pathData = '';
+                for (let i = 0; i < points.length - 2; i += 2) {
+                    const x1 = parseFloat(points[i]);
+                    const y1 = parseFloat(points[i+1]);
+                    const x2 = parseFloat(points[i+2]);
+                    const y2 = parseFloat(points[i+3]);
                     
-                    // Calculate average normal for the triangle
-                    const nx = (normals[index] + normals[index + 3] + normals[index + 6]) / 3;
-                    const ny = (normals[index + 1] + normals[index + 4] + normals[index + 7]) / 3;
-                    const nz = (normals[index + 2] + normals[index + 5] + normals[index + 8]) / 3;
-                    
-                    // Write normal (3 floats x 4 bytes = 12 bytes)
-                    dataView.setFloat32(offset, nx, true);
-                    dataView.setFloat32(offset + 4, ny, true);
-                    dataView.setFloat32(offset + 8, nz, true);
-                    offset += 12;
-                    
-                    // Write vertices (9 floats x 4 bytes = 36 bytes)
-                    for (let j = 0; j < 9; j += 3) {
-                        dataView.setFloat32(offset, positions[index + j], true);     // x
-                        dataView.setFloat32(offset + 4, positions[index + j + 1], true); // y
-                        dataView.setFloat32(offset + 8, positions[index + j + 2], true); // z
-                        offset += 12;
+                    if (i === 0) {
+                        // Starting segment
+                        pathData = createLinePathWithThickness(x1, y1, x2, y2, strokeWidth);
+                    } else {
+                        // Continuing segments, append path
+                        pathData += createLinePathWithThickness(x1, y1, x2, y2, strokeWidth, true);
                     }
-                    
-                    // Attribute byte count (2 bytes) - unused in binary STL
-                    dataView.setUint16(offset, 0, true);
-                    offset += 2;
                 }
                 
-                // Create a blob from the binary data
-                stlContent = new Blob([buffer], { type: 'application/octet-stream' });
-                return true;
+                svgPaths.push({
+                    pathData: pathData,
+                    isHole: false,
+                    strokeWidth: strokeWidth,
+                    element: polyline
+                });
+            });
+            
+            // Process polygons
+            polygonElements.forEach(polygon => {
+                const points = polygon.getAttribute('points').trim().split(/\s+|,/);
+                const fillColor = polygon.getAttribute('fill');
+                let isHole = false;
                 
-            } catch (error) {
-                console.error('Error generating STL:', error);
-                return createFallbackSTL();
-            }
+                if (fillColor === 'none' || fillColor === '#fff' || fillColor === '#ffffff' || fillColor === 'white') {
+                    isHole = true;
+                }
+                
+                // Create a path from the polygon
+                let pathData = `M${points[0]},${points[1]}`;
+                for (let i = 2; i < points.length; i += 2) {
+                    pathData += ` L${points[i]},${points[i+1]}`;
+                }
+                pathData += ' Z';
+                
+                svgPaths.push({
+                    pathData: pathData,
+                    isHole: isHole,
+                    strokeWidth: parseFloat(polygon.getAttribute('stroke-width') || 1),
+                    element: polygon
+                });
+            });
         }
         
-        // Create a fallback STL cube if generation fails
-        function createFallbackSTL() {
-            console.warn('Creating fallback STL cube');
+        console.log('Parsed SVG with', svgPaths.length, 'paths/shapes');
+        console.log('Holes:', svgPaths.filter(p => p.isHole).length);
+        console.log('Outer contours:', svgPaths.filter(p => !p.isHole).length);
+        console.log('Mode:', isLineMode ? 'Line Mode' : 'Volume Mode');
+    }
+    
+    // Helper function to create a path for a line with thickness
+    function createLinePathWithThickness(x1, y1, x2, y2, thickness, isSegment = false) {
+        // Calculate perpendicular direction for thickness
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        
+        // Calculate offset perpendicular to the line direction
+        const halfThickness = thickness / 2;
+        const offsetX = (dy / length) * halfThickness;
+        const offsetY = -(dx / length) * halfThickness;
+        
+        // Calculate the four corners of the thick line
+        const x1Left = x1 - offsetX;
+        const y1Left = y1 - offsetY;
+        const x1Right = x1 + offsetX;
+        const y1Right = y1 + offsetY;
+        const x2Left = x2 - offsetX;
+        const y2Left = y2 - offsetY;
+        const x2Right = x2 + offsetX;
+        const y2Right = y2 + offsetY;
+        
+        if (isSegment) {
+            // For continuing segments, just return the right side path
+            return `L${x2Left},${y2Left} L${x2Right},${y2Right}`;
+        } else {
+            // For a complete path, create a closed rectangular path
+            return `M${x1Left},${y1Left} L${x2Left},${y2Left} L${x2Right},${y2Right} L${x1Right},${y1Right} Z`;
+        }
+    }
+      
+    // Parse SVG path data string into commands
+    function parseSVGPath(pathData) {
+        const commands = [];
+        const pathParser = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+        let match;
+        
+        while ((match = pathParser.exec(pathData)) !== null) {
+            const type = match[1];
+            const argsStr = match[2].trim();
+            let args = [];
             
-            // Create a placeholder STL file (binary format)
-            const headerSize = 80;
-            const header = new Uint8Array(headerSize);
-            
-            // Create a simple cube STL with 12 triangles (2 per face)
-            const numTriangles = 12;
-            const dataSize = 50 * numTriangles;
-            const buffer = new ArrayBuffer(headerSize + 4 + dataSize);
-            
-            const dataView = new DataView(buffer);
-            
-            // Fill header (80 bytes)
-            for (let i = 0; i < headerSize; i++) {
-                dataView.setUint8(i, header[i]);
+            if (argsStr) {
+                // Handle both comma and space separated values
+                args = argsStr.replace(/,/g, ' ')
+                            .split(/\s+/)
+                            .map(parseFloat)
+                            .filter(arg => !isNaN(arg));
             }
             
-            // Number of triangles (4 bytes)
-            dataView.setUint32(headerSize, numTriangles, true);
-            
-            // For the demo, we'll just create a binary blob
-            stlContent = new Blob([buffer], { type: 'application/octet-stream' });
+            commands.push({ type, args });
+        }
+        
+        return commands;
+    }
+      
+    // Create points to approximate an arc
+    function approximateArc(x1, y1, rx, ry, angle, largeArcFlag, sweepFlag, x2, y2) {
+        // Convert angle from degrees to radians
+        angle = angle * Math.PI / 180;
+        
+        // Simple approximation - just return end point for now
+        // For a more accurate implementation, additional math would be needed
+        return [{ x: x2, y: y2 }];
+    }
+      
+    function determineIfHole(element) {
+        // In Line Mode, we don't consider anything as a hole inherently
+        if (isLineMode) {
             return false;
         }
         
-        // Handle download button
-        downloadBtn.addEventListener('click', function() {
-            if (!stlContent) return;
+        // Check if the element has explicit hole markers
+        if (element.getAttribute('data-hole') === 'true') {
+            return true;
+        }
+        
+        // Check fill attribute - no fill or white fill often indicates a hole
+        const fill = element.getAttribute('fill');
+        if (fill === 'none' || fill === '#fff' || fill === '#ffffff' || fill === 'white') {
+            return true;
+        }
+        
+        // Check for path direction - clockwise paths are typically outer contours,
+        // counter-clockwise paths are typically holes in SVG
+        if (element.tagName.toLowerCase() === 'path') {
+            const pathData = element.getAttribute('d');
+            if (pathData && isCounterClockwise(pathData)) {
+                return true;
+            }
+        }
+        
+        // For small circles with stroke, assume they're mounting holes
+        if (element.tagName.toLowerCase() === 'circle') {
+            const r = parseFloat(element.getAttribute('r'));
+            if (r < 10 && element.getAttribute('stroke')) {
+                return true;
+            }
+        }
+        
+        // Default to not being a hole
+        return false;
+    }
+      
+    // Simplified check for counter-clockwise paths (for holes)
+    function isCounterClockwise(pathData) {
+        // This is a simplification - for a proper implementation,
+        // calculate the signed area of the polygon
+        // Counter-clockwise paths have negative signed area
+        
+        // For now, return false to treat paths as outer contours by default
+        return false;
+    }
+        
+    // Convert SVG to STL
+    convertBtn.addEventListener('click', convertToSTL);
+        
+    function convertToSTL() {
+        if (!svgContent) return;
+        
+        const extrusionHeight = parseFloat(document.getElementById('extrusion-height').value);
+        const baseThickness = parseFloat(document.getElementById('base-thickness').value);
+        const resolution = parseFloat(document.getElementById('resolution').value);
+        
+        // Initialize Three.js scene
+        scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(stlPreview.clientWidth, stlPreview.clientHeight);
+        renderer.setClearColor(0xf0f0f0);
+        
+        // Clear previous preview
+        stlPreview.innerHTML = '';
+        stlPreview.appendChild(renderer.domElement);
+        
+        // Scale factor to fit the SVG to the preview
+        const scale = 0.5 / Math.max(svgViewBox.width, svgViewBox.height);
+        
+        // Process all paths based on the current mode
+        let shapes = [];
+        
+        if (isLineMode) {
+            // In Line Mode, all paths are treated as boundaries regardless of fill
+            svgPaths.forEach(path => {
+                const shape = new THREE.Shape();
+                try {
+                    createShapeFromPathData(shape, path.pathData, scale);
+                    shapes.push(shape);
+                } catch (e) {
+                    console.error('Error creating shape:', e);
+                }
+            });
+        } else {
+            // In Volume Mode, process outer contours and holes
+            const outerContours = svgPaths.filter(path => !path.isHole);
             
-            // Create download link
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(stlContent);
-            link.download = 'model.stl';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            if (outerContours.length > 0) {
+                // Create shapes from all outer contours
+                outerContours.forEach(contour => {
+                    const shape = new THREE.Shape();
+                    try {
+                        createShapeFromPathData(shape, contour.pathData, scale);
+                        
+                        // Find holes that belong to this contour
+                        const holes = svgPaths.filter(path => path.isHole).map(holePath => {
+                            const hole = new THREE.Shape();
+                            createShapeFromPathData(hole, holePath.pathData, scale);
+                            return hole;
+                        });
+                        
+                        // Add holes to the shape
+                        shape.holes = holes;
+                        shapes.push(shape);
+                    } catch (e) {
+                        console.error('Error creating shape:', e);
+                    }
+                });
+            }
+        }
+        
+        // If no valid shapes were created, use a fallback
+        if (shapes.length === 0) {
+            const fallbackShape = new THREE.Shape();
+            createFallbackShape(fallbackShape);
+            shapes.push(fallbackShape);
+        }
+        
+        // Create a group to hold all the extruded meshes
+        const group = new THREE.Group();
+        
+        // Extrusion settings for solid model
+        const extrudeSettings = {
+            steps: 1,
+            depth: extrusionHeight,
+            bevelEnabled: false
+        };
+        
+        // Create extruded geometries for all shapes
+        shapes.forEach(shape => {
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x2194ce,
+                side: THREE.DoubleSide
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            group.add(mesh);
         });
+        
+        scene.add(group);
+        
+        // Center the model
+        const box = new THREE.Box3().setFromObject(group);
+        const center = box.getCenter(new THREE.Vector3());
+        group.position.set(-center.x, -center.y, -extrusionHeight/2);
+        
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+        
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+        directionalLight2.position.set(-1, -1, 1);
+        scene.add(directionalLight2);
+        
+        // Position camera to better frame the model
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+        
+        // Add some margin
+        cameraZ *= 1.5;
+        
+        camera.position.z = cameraZ;
+        
+        // Set up orbit controls for better preview interaction
+        setupOrbitControls(camera, renderer);
+        
+        // Enable download button
+        downloadBtn.disabled = false;
+        
+        // Generate binary STL data
+        generateSTLData(group);
+    }
+        
+    // Helper to set up orbit controls
+    function setupOrbitControls(camera, renderer) {
+        // Cancel any previous animations first
+        if (window.previousAnimationFrameId) {
+            cancelAnimationFrame(window.previousAnimationFrameId);
+        }
+        
+        let animationFrameId;
+        
+        if (typeof THREE.OrbitControls !== 'undefined') {
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.25;
+            controls.enableZoom = true;
+            controls.zoomSpeed = 1.2;
+            controls.enablePan = true;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 1.0;
+            controls.minDistance = 1;
+            controls.maxDistance = 1000;
+            
+            // Add instruction div if it doesn't exist
+            let instructionDiv = stlPreview.querySelector('.controls-info');
+            if (!instructionDiv) {
+                instructionDiv = document.createElement('div');
+                instructionDiv.className = 'controls-info';
+                instructionDiv.style.position = 'absolute';
+                instructionDiv.style.bottom = '10px';
+                instructionDiv.style.left = '50%';
+                instructionDiv.style.transform = 'translateX(-50%)';
+                instructionDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
+                instructionDiv.style.color = 'white';
+                instructionDiv.style.padding = '5px 10px';
+                instructionDiv.style.borderRadius = '4px';
+                instructionDiv.style.fontSize = '12px';
+                instructionDiv.style.pointerEvents = 'none';
+                instructionDiv.textContent = 'Left click: Rotate | Right click: Pan | Scroll: Zoom';
+                stlPreview.appendChild(instructionDiv);
+            }
+            
+            function animate() {
+                animationFrameId = requestAnimationFrame(animate);
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+        } else {
+            function animate() {
+                animationFrameId = requestAnimationFrame(animate);
+                scene.rotation.x += 0.005;
+                scene.rotation.y += 0.005;
+                renderer.render(scene, camera);
+            }
+            animate();
+        }
+        
+        // Store animation reference globally to allow cancellation on next conversion
+        window.previousAnimationFrameId = animationFrameId;
+        
+        // Clean up on window unload
+        window.addEventListener('unload', () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+        });
+    }
+        
+    // Create a simple fallback shape if parsing fails
+    function createFallbackShape(shape) {
+        shape.moveTo(-30, -20);
+        shape.lineTo(30, -20);
+        shape.lineTo(30, 20);
+        shape.lineTo(-30, 20);
+        shape.lineTo(-30, -20);
+    }
+    
+    function generateSTLData(group) {
+        try {
+            // Combine all geometries in the group
+            const geometries = [];
+            group.traverse(child => {
+                if (child instanceof THREE.Mesh) {
+                    geometries.push(child.geometry);
+                }
+            });
+            
+            if (geometries.length === 0) {
+                console.error('No geometries found in group');
+                return createFallbackSTL();
+            }
+            
+            // Merge geometries if multiple exist
+            let mergedGeometry;
+            if (geometries.length > 1) {
+                mergedGeometry = BufferGeometryUtils.mergeBufferGeometries(geometries);
+            } else {
+                mergedGeometry = geometries[0];
+            }
+            
+            // The variable 'geometry' is undefined, should be 'mergedGeometry'
+            if (!mergedGeometry) {
+                console.error('No geometry provided for STL generation');
+                return createFallbackSTL();
+            }
+            
+            // Make sure the geometry is a BufferGeometry for STL export
+            if (!(mergedGeometry instanceof THREE.BufferGeometry)) {
+                mergedGeometry = new THREE.BufferGeometry().fromGeometry(mergedGeometry);
+            }
+            
+            // Get position attribute from geometry
+            const positionAttribute = mergedGeometry.getAttribute('position');
+            if (!positionAttribute) {
+                console.error('Geometry has no position attribute');
+                return createFallbackSTL();
+            }
+            
+            // Get normal attribute or compute it if not present
+            let normalAttribute = mergedGeometry.getAttribute('normal');
+            if (!normalAttribute) {
+                mergedGeometry.computeVertexNormals();
+                normalAttribute = mergedGeometry.getAttribute('normal');
+            }
+            
+            // Count triangles
+            const numTriangles = positionAttribute.count / 3;
+            if (numTriangles <= 0) {
+                console.error('No triangles in geometry');
+                return createFallbackSTL();
+            }
+            
+            console.log(`Generating STL with ${numTriangles} triangles`);
+            
+            // Create STL binary file
+            const headerSize = 80;
+            const header = new Uint8Array(headerSize);
+            // We could add a text header here if desired
+            
+            // Calculate the size of the file
+            // Header (80 bytes) + Triangle count (4 bytes) + Triangles (50 bytes each)
+            const dataSize = 50 * numTriangles;
+            const buffer = new ArrayBuffer(headerSize + 4 + dataSize);
+            const dataView = new DataView(buffer);
+            
+            // Fill header (80 bytes)
+            const encoder = new TextEncoder();
+            const headerText = "SVG to STL conversion by SVG to STL Converter";
+            const headerBytes = encoder.encode(headerText);
+            for (let i = 0; i < Math.min(headerBytes.length, headerSize); i++) {
+                dataView.setUint8(i, headerBytes[i]);
+            }
+            
+            // Write the number of triangles (4 bytes, little-endian)
+            dataView.setUint32(headerSize, numTriangles, true);
+            
+            // Offset for writing triangle data (after header and triangle count)
+            let offset = headerSize + 4;
+            
+            // Position and normal arrays
+            const positions = positionAttribute.array;
+            const normals = normalAttribute.array;
+            
+            // For each triangle
+            for (let i = 0; i < numTriangles; i++) {
+                const index = i * 9; // 3 vertices per triangle, 3 components (x,y,z) per vertex
+                
+                // Calculate average normal for the triangle
+                const nx = (normals[index] + normals[index + 3] + normals[index + 6]) / 3;
+                const ny = (normals[index + 1] + normals[index + 4] + normals[index + 7]) / 3;
+                const nz = (normals[index + 2] + normals[index + 5] + normals[index + 8]) / 3;
+                
+                // Write normal (3 floats x 4 bytes = 12 bytes)
+                dataView.setFloat32(offset, nx, true);
+                dataView.setFloat32(offset + 4, ny, true);
+                dataView.setFloat32(offset + 8, nz, true);
+                offset += 12;
+                
+                // Write vertices (9 floats x 4 bytes = 36 bytes)
+                for (let j = 0; j < 9; j += 3) {
+                    dataView.setFloat32(offset, positions[index + j], true);     // x
+                    dataView.setFloat32(offset + 4, positions[index + j + 1], true); // y
+                    dataView.setFloat32(offset + 8, positions[index + j + 2], true); // z
+                    offset += 12;
+                }
+                
+                // Attribute byte count (2 bytes) - unused in binary STL
+                dataView.setUint16(offset, 0, true);
+                offset += 2;
+            }
+            
+            // Create a blob from the binary data
+            stlContent = new Blob([buffer], { type: 'application/octet-stream' });
+            return true;
+            
+        } catch (error) {
+            console.error('Error generating STL:', error);
+            return createFallbackSTL();
+        }
+    }
+        
+    // Create a fallback STL cube if generation fails
+    function createFallbackSTL() {
+        console.warn('Creating fallback STL cube');
+        
+        // Create a placeholder STL file (binary format)
+        const headerSize = 80;
+        const header = new Uint8Array(headerSize);
+        
+        // Create a simple cube STL with 12 triangles (2 per face)
+        const numTriangles = 12;
+        const dataSize = 50 * numTriangles;
+        const buffer = new ArrayBuffer(headerSize + 4 + dataSize);
+        
+        const dataView = new DataView(buffer);
+        
+        // Fill header (80 bytes)
+        for (let i = 0; i < headerSize; i++) {
+            dataView.setUint8(i, header[i]);
+        }
+        
+        // Number of triangles (4 bytes)
+        dataView.setUint32(headerSize, numTriangles, true);
+        
+        // For the demo, we'll just create a binary blob
+        stlContent = new Blob([buffer], { type: 'application/octet-stream' });
+        return false;
+    }
+        
+    // Handle download button
+    downloadBtn.addEventListener('click', function() {
+        if (!stlContent) return;
+        
+        // Create download link
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(stlContent);
+        link.download = 'model.stl';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
     </script>
 </body>
 </html>
