@@ -1028,6 +1028,7 @@
     function setupOrbitControls(camera, renderer) {
         // Cancel any previous animations first
         if (window.previousAnimationFrameId) {
+            return;
             cancelAnimationFrame(window.previousAnimationFrameId);
         }
         
