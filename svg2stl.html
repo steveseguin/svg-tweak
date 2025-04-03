@@ -793,6 +793,49 @@
     // Convert SVG to STL
     convertBtn.addEventListener('click', convertToSTL);
         
+    // Function to detect if one path is inside another
+    function isPathInsideAnother(innerPath, outerPath, scale) {
+        // Convert paths to points for checking containment
+        const innerShape = new THREE.Shape();
+        const outerShape = new THREE.Shape();
+        
+        try {
+            createShapeFromPathData(innerShape, innerPath.pathData, scale);
+            createShapeFromPathData(outerShape, outerPath.pathData, scale);
+            
+            // Get a point from the inner shape (using first point)
+            const innerPoints = innerShape.getPoints(8);
+            if (innerPoints.length === 0) return false;
+            
+            const testPoint = innerPoints[0];
+            
+            // Check if this point is inside the outer shape
+            return isPointInShape(testPoint, outerShape);
+        } catch (e) {
+            console.error('Error in path containment check:', e);
+            return false;
+        }
+    }
+    
+    // Test if a point is inside a shape using ray casting algorithm
+    function isPointInShape(point, shape) {
+        const shapePoints = shape.getPoints(32);
+        let inside = false;
+        
+        // Ray casting algorithm
+        for (let i = 0, j = shapePoints.length - 1; i < shapePoints.length; j = i++) {
+            const xi = shapePoints[i].x, yi = shapePoints[i].y;
+            const xj = shapePoints[j].x, yj = shapePoints[j].y;
+            
+            const intersect = ((yi > point.y) !== (yj > point.y)) &&
+                (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+                
+            if (intersect) inside = !inside;
+        }
+        
+        return inside;
+    }
+    
     function convertToSTL() {
         if (!svgContent) return;
         
@@ -818,16 +861,53 @@
         let shapes = [];
         
         if (isLineMode) {
-            // In Line Mode, all paths are treated as boundaries regardless of fill
-            svgPaths.forEach(path => {
-                const shape = new THREE.Shape();
+            // In Line Mode, we need to determine containment relationships
+            // First, create a map of all paths
+            const pathsMap = svgPaths.map((path, index) => ({
+                ...path,
+                index,
+                containedBy: [],
+                threeShape: new THREE.Shape()
+            }));
+            
+            // Initialize Three.js shapes for all paths
+            pathsMap.forEach(path => {
                 try {
-                    createShapeFromPathData(shape, path.pathData, scale);
-                    shapes.push(shape);
+                    createShapeFromPathData(path.threeShape, path.pathData, scale);
                 } catch (e) {
                     console.error('Error creating shape:', e);
                 }
             });
+            
+            // Build containment hierarchy
+            for (let i = 0; i < pathsMap.length; i++) {
+                for (let j = 0; j < pathsMap.length; j++) {
+                    if (i !== j) {
+                        if (isPathInsideAnother(pathsMap[i], pathsMap[j], scale)) {
+                            pathsMap[i].containedBy.push(j);
+                        }
+                    }
+                }
+            }
+            
+            // Identify outermost paths (not contained by any other path)
+            const outermostPaths = pathsMap.filter(path => path.containedBy.length === 0);
+            
+            // For each outermost path, identify its direct holes (paths contained by it but by no other path)
+            outermostPaths.forEach(outerPath => {
+                const shape = outerPath.threeShape;
+                
+                // Find direct holes for this outer path
+                const holes = pathsMap.filter(p => {
+                    // A direct hole is contained only by this outer path
+                    return p.containedBy.length === 1 && p.containedBy[0] === outerPath.index;
+                }).map(holePath => holePath.threeShape);
+                
+                // Assign holes to the shape
+                shape.holes = holes;
+                shapes.push(shape);
+            });
+            
         } else {
             // In Volume Mode, process outer contours and holes
             const outerContours = svgPaths.filter(path => !path.isHole);
