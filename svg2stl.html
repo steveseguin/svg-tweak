@@ -1249,137 +1249,140 @@
     }
     
     async function convertToSTL() {
-    if (!svgContent) return;
-    
-    try {
-        // Make sure BufferGeometryUtils is loaded
-        await loadBufferGeometryUtils();
+        if (!svgContent) return;
         
-        const extrusionHeight = parseFloat(document.getElementById('extrusion-height').value);
-        const baseThickness = parseFloat(document.getElementById('base-thickness').value);
-        const resolution = parseFloat(document.getElementById('resolution').value);
-        
-        // Initialize Three.js scene
-        scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(stlPreview.clientWidth, stlPreview.clientHeight);
-        renderer.setClearColor(0xf0f0f0);
-        
-        // Clear previous preview
-        stlPreview.innerHTML = '';
-        stlPreview.appendChild(renderer.domElement);
-        
-        // Scale factor to fit the SVG to the preview
-        const scale = 0.5 / Math.max(svgViewBox.width, svgViewBox.height);
-        
-        // Process all paths based on the current mode
-        let shapes = [];
-        
-        if (isLineMode) {
-            // Line mode processing...
-            // (existing code)
-        } else {
-            // Volume mode processing
-            const outerContours = svgPaths.filter(path => !path.isHole);
+        try {
+            // Make sure BufferGeometryUtils is loaded
+            await loadBufferGeometryUtils();
             
-            if (outerContours.length > 0) {
-                // Create shapes from all outer contours
-                outerContours.forEach(contour => {
-                    const shape = new THREE.Shape();
-                    try {
-                        createShapeFromPathData(shape, contour.pathData, scale);
-                        
-                        // Find holes that belong to this contour
-                        const holes = svgPaths.filter(path => path.isHole).map(holePath => {
-                            const hole = new THREE.Shape();
-                            createShapeFromPathData(hole, holePath.pathData, scale);
-                            return hole;
-                        });
-                        
-                        // Add holes to the shape
-                        shape.holes = holes;
-                        shapes.push(shape);
-                    } catch (e) {
-                        console.error('Error creating shape:', e);
-                    }
-                });
-            }
-        }
-        
-        // If no valid shapes were created, use a fallback
-        if (shapes.length === 0) {
-            console.warn('No valid shapes created, using fallback');
-            const fallbackShape = new THREE.Shape();
-            createFallbackShape(fallbackShape);
-            shapes.push(fallbackShape);
-        }
-        
-        // Create a group to hold all the extruded meshes
-        const group = new THREE.Group();
-        
-        // Extrusion settings for solid model
-        const extrudeSettings = {
-            steps: 1,
-            depth: extrusionHeight,
-            bevelEnabled: false,
-            curveSegments: resolution // Use resolution parameter for curve segments
-        };
-        
-        // Create extruded geometries for all shapes
-        shapes.forEach(shape => {
-            try {
-                const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-                const material = new THREE.MeshStandardMaterial({
-                    color: 0x2194ce,
-                    side: THREE.DoubleSide
-                });
+            const extrusionHeight = parseFloat(document.getElementById('extrusion-height').value);
+            const baseThickness = parseFloat(document.getElementById('base-thickness').value);
+            const resolution = parseFloat(document.getElementById('resolution').value);
+            
+            // Initialize Three.js scene
+            scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(stlPreview.clientWidth, stlPreview.clientHeight);
+            renderer.setClearColor(0xf0f0f0);
+            
+            // Clear previous preview
+            stlPreview.innerHTML = '';
+            stlPreview.appendChild(renderer.domElement);
+            
+            // Scale factor to fit the SVG to the preview
+            const scale = 0.5 / Math.max(svgViewBox.width, svgViewBox.height);
+            
+            // Process all paths based on the current mode
+            let shapes = [];
+            
+            if (isLineMode) {
+                // Line mode processing...
+                // (existing code)
+            } else {
+                // Volume mode processing
+                const outerContours = svgPaths.filter(path => !path.isHole);
                 
-                const mesh = new THREE.Mesh(geometry, material);
-                group.add(mesh);
-            } catch (e) {
-                console.error('Error extruding shape:', e);
+                if (outerContours.length > 0) {
+                    // Create shapes from all outer contours
+                    outerContours.forEach(contour => {
+                        const shape = new THREE.Shape();
+                        try {
+                            createShapeFromPathData(shape, contour.pathData, scale);
+                            
+                            // Find holes that belong to this contour
+                            const holes = svgPaths.filter(path => path.isHole).map(holePath => {
+                                const hole = new THREE.Shape();
+                                createShapeFromPathData(hole, holePath.pathData, scale);
+                                return hole;
+                            });
+                            
+                            // Add holes to the shape
+                            shape.holes = holes;
+                            shapes.push(shape);
+                        } catch (e) {
+                            console.error('Error creating shape:', e);
+                        }
+                    });
+                }
             }
-        });
-        
-        scene.add(group);
-        
-        // Center the model
-        const box = new THREE.Box3().setFromObject(group);
-        const center = box.getCenter(new THREE.Vector3());
-        group.position.set(-center.x, -center.y, -extrusionHeight/2);
-        
-        // Add lighting
-        const ambientLight = new THREE.AmbientLight(0x404040);
-        scene.add(ambientLight);
-        
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        directionalLight.position.set(1, 1, 1);
-        scene.add(directionalLight);
-        
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
-        directionalLight2.position.set(-1, -1, 1);
-        scene.add(directionalLight2);
-        
-        // Position camera to better frame the model
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = camera.fov * (Math.PI / 180);
-        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-        
-        // Add some margin
-        cameraZ *= 1.5;
-        
-        camera.position.z = cameraZ;
-        
-        // Set up orbit controls for better preview interaction
-        setupOrbitControls(camera, renderer);
-        
-        // Enable download button
-        downloadBtn.disabled = false;
-        
-        // Generate binary STL data
-        generateSTLData(group);
+            
+            // If no valid shapes were created, use a fallback
+            if (shapes.length === 0) {
+                console.warn('No valid shapes created, using fallback');
+                const fallbackShape = new THREE.Shape();
+                createFallbackShape(fallbackShape);
+                shapes.push(fallbackShape);
+            }
+            
+            // Create a group to hold all the extruded meshes
+            const group = new THREE.Group();
+            
+            // Extrusion settings for solid model
+            const extrudeSettings = {
+                steps: 1,
+                depth: extrusionHeight,
+                bevelEnabled: false,
+                curveSegments: resolution // Use resolution parameter for curve segments
+            };
+            
+            // Create extruded geometries for all shapes
+            shapes.forEach(shape => {
+                try {
+                    const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                    const material = new THREE.MeshStandardMaterial({
+                        color: 0x2194ce,
+                        side: THREE.DoubleSide
+                    });
+                    
+                    const mesh = new THREE.Mesh(geometry, material);
+                    group.add(mesh);
+                } catch (e) {
+                    console.error('Error extruding shape:', e);
+                }
+            });
+            
+            scene.add(group);
+            
+            // Center the model
+            const box = new THREE.Box3().setFromObject(group);
+            const center = box.getCenter(new THREE.Vector3());
+            group.position.set(-center.x, -center.y, -extrusionHeight/2);
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+            
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+            directionalLight2.position.set(-1, -1, 1);
+            scene.add(directionalLight2);
+            
+            // Position camera to better frame the model
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+            
+            // Add some margin
+            cameraZ *= 1.5;
+            
+            camera.position.z = cameraZ;
+            
+            // Set up orbit controls for better preview interaction
+            setupOrbitControls(camera, renderer);
+            
+            // Enable download button
+            downloadBtn.disabled = false;
+            
+            // Generate binary STL data
+            generateSTLData(group);
+        } catch(e){
+            console.error(e);
+        }
     }
         
     // Helper to set up orbit controls
