@@ -801,7 +801,7 @@
                 // Merge geometries if multiple exist
                 let mergedGeometry;
                 if (geometries.length > 1) {
-                    mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries);
+                    mergedGeometry = BufferGeometryUtils.mergeBufferGeometries(geometries);
                 } else {
                     mergedGeometry = geometries[0];
                 }
