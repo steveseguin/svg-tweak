@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/utils/BufferGeometryUtils.js"></script>
     <title>SVG to STL Converter</title>
     <style>
         body {
@@ -286,28 +287,161 @@
             }
         }
         
-        function parseSVG(svgString) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(svgString, 'image/svg+xml');
-            const svg = doc.querySelector('svg');
-            
-            // Extract viewBox
-            if (svg.getAttribute('viewBox')) {
-                const viewBoxValues = svg.getAttribute('viewBox').split(' ');
-                svgViewBox = {
-                    x: parseFloat(viewBoxValues[0]),
-                    y: parseFloat(viewBoxValues[1]),
-                    width: parseFloat(viewBoxValues[2]),
-                    height: parseFloat(viewBoxValues[3])
-                };
-            } else if (svg.getAttribute('width') && svg.getAttribute('height')) {
-                svgViewBox = {
-                    x: 0,
-                    y: 0,
-                    width: parseFloat(svg.getAttribute('width')),
-                    height: parseFloat(svg.getAttribute('height'))
-                };
-            }
+        
+        
+        // Helper function to create path data for rounded rectangle
+        function createRoundedRectPath(x, y, width, height, radius) {
+            return `M${x + radius},${y}
+                    L${x + width - radius},${y}
+                    A${radius},${radius} 0 0 1 ${x + width},${y + radius}
+                    L${x + width},${y + height - radius}
+                    A${radius},${radius} 0 0 1 ${x + width - radius},${y + height}
+                    L${x + radius},${y + height}
+                    A${radius},${radius} 0 0 1 ${x},${y + height - radius}
+                    L${x},${y + radius}
+                    A${radius},${radius} 0 0 1 ${x + radius},${y}
+                    Z`;
+        }
+
+        function createShapeFromPathData(shape, pathData, scale) {
+          // Parse SVG path data and create a Three.js shape
+          const commands = parseSVGPath(pathData);
+          let firstCommand = true;
+          
+          commands.forEach(cmd => {
+              const type = cmd.type;
+              const args = cmd.args.map(arg => arg * scale);
+              
+              switch(type) {
+                  case 'M': // Move to (absolute)
+                      shape.moveTo(args[0], -args[1]); // Note Y-axis flip for Three.js
+                      break;
+                  case 'm': // Move to (relative)
+                      if (firstCommand) {
+                          shape.moveTo(args[0], -args[1]);
+                      } else {
+                          const currentPoint = shape.currentPoint;
+                          shape.moveTo(currentPoint.x + args[0], currentPoint.y - args[1]);
+                      }
+                      break;
+                  case 'L': // Line to (absolute)
+                      shape.lineTo(args[0], -args[1]);
+                      break;
+                  case 'l': // Line to (relative)
+                      const currentPoint = shape.currentPoint;
+                      shape.lineTo(currentPoint.x + args[0], currentPoint.y - args[1]);
+                      break;
+                  case 'H': // Horizontal line (absolute)
+                      shape.lineTo(args[0], shape.currentPoint.y);
+                      break;
+                  case 'h': // Horizontal line (relative)
+                      shape.lineTo(shape.currentPoint.x + args[0], shape.currentPoint.y);
+                      break;
+                  case 'V': // Vertical line (absolute)
+                      shape.lineTo(shape.currentPoint.x, -args[0]);
+                      break;
+                  case 'v': // Vertical line (relative)
+                      shape.lineTo(shape.currentPoint.x, shape.currentPoint.y - args[0]);
+                      break;
+                  case 'C': // Cubic curve (absolute)
+                      shape.bezierCurveTo(
+                          args[0], -args[1],
+                          args[2], -args[3],
+                          args[4], -args[5]
+                      );
+                      break;
+                  case 'c': // Cubic curve (relative)
+                      const cp = shape.currentPoint;
+                      shape.bezierCurveTo(
+                          cp.x + args[0], cp.y - args[1],
+                          cp.x + args[2], cp.y - args[3],
+                          cp.x + args[4], cp.y - args[5]
+                      );
+                      break;
+                  case 'Q': // Quadratic curve (absolute)
+                      shape.quadraticCurveTo(
+                          args[0], -args[1],
+                          args[2], -args[3]
+                      );
+                      break;
+                  case 'q': // Quadratic curve (relative)
+                      const qp = shape.currentPoint;
+                      shape.quadraticCurveTo(
+                          qp.x + args[0], qp.y - args[1],
+                          qp.x + args[2], qp.y - args[3]
+                      );
+                      break;
+                  case 'A': // Arc (absolute)
+                      // Simplified arc handling - convert to curve
+                      const arc = approximateArc(
+                          shape.currentPoint.x, shape.currentPoint.y,
+                          args[0], args[1], args[2], args[3], args[4], args[5], -args[6]
+                      );
+                      arc.forEach(point => {
+                          shape.lineTo(point.x, point.y);
+                      });
+                      break;
+                  case 'Z':
+                  case 'z':
+                      shape.closePath();
+                      break;
+              }
+              
+              firstCommand = false;
+          });
+      }
+
+        function updateExtrusionSettings(viewBox) {
+    if (!viewBox) return;
+    
+    // Calculate appropriate extrusion height range based on SVG dimensions
+    const maxDimension = Math.max(viewBox.width, viewBox.height);
+    const defaultHeight = Math.max(1, Math.round(maxDimension * 0.05)); // 5% of max dimension
+    
+    // Update extrusion height slider
+    const extrusionHeightSlider = document.getElementById('extrusion-height');
+    const extrusionHeightValue = document.getElementById('extrusion-height').nextElementSibling;
+    
+    extrusionHeightSlider.min = "0.1";
+    extrusionHeightSlider.max = Math.round(maxDimension * 0.5); // 50% of max dimension
+    extrusionHeightSlider.value = defaultHeight;
+    extrusionHeightValue.value = defaultHeight;
+    
+    // Also update base thickness to be proportional
+    const baseThicknessSlider = document.getElementById('base-thickness');
+    const baseThicknessValue = document.getElementById('base-thickness').nextElementSibling;
+    
+    const defaultBase = Math.max(0.5, Math.round(maxDimension * 0.01)); // 1% of max dimension
+    baseThicknessSlider.min = "0";
+    baseThicknessSlider.max = Math.round(maxDimension * 0.1); // 10% of max dimension
+    baseThicknessSlider.value = defaultBase;
+    baseThicknessValue.value = defaultBase;
+}
+        
+      function parseSVG(svgString) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svgString, 'image/svg+xml');
+        const svg = doc.querySelector('svg');
+        
+        // Extract viewBox
+        if (svg.getAttribute('viewBox')) {
+            const viewBoxValues = svg.getAttribute('viewBox').split(' ');
+            svgViewBox = {
+                x: parseFloat(viewBoxValues[0]),
+                y: parseFloat(viewBoxValues[1]),
+                width: parseFloat(viewBoxValues[2]),
+                height: parseFloat(viewBoxValues[3])
+            };
+        } else if (svg.getAttribute('width') && svg.getAttribute('height')) {
+            svgViewBox = {
+                x: 0,
+                y: 0,
+                width: parseFloat(svg.getAttribute('width')),
+                height: parseFloat(svg.getAttribute('height'))
+            };
+        }
+
+          updateExtrusionSettings(svgViewBox)
             
             // Structure to hold paths and their types (outer contours vs holes)
             svgPaths = [];
@@ -374,222 +508,270 @@
             console.log('Holes:', svgPaths.filter(p => p.isHole).length);
             console.log('Outer contours:', svgPaths.filter(p => !p.isHole).length);
         }
-        
-        // Helper function to create path data for rounded rectangle
-        function createRoundedRectPath(x, y, width, height, radius) {
-            return `M${x + radius},${y}
-                    L${x + width - radius},${y}
-                    A${radius},${radius} 0 0 1 ${x + width},${y + radius}
-                    L${x + width},${y + height - radius}
-                    A${radius},${radius} 0 0 1 ${x + width - radius},${y + height}
-                    L${x + radius},${y + height}
-                    A${radius},${radius} 0 0 1 ${x},${y + height - radius}
-                    L${x},${y + radius}
-                    A${radius},${radius} 0 0 1 ${x + radius},${y}
-                    Z`;
-        }
-        
-        // Determine if a shape is a hole based on fill, stroke, and other attributes
-        function determineIfHole(element) {
-            // Check if the element has explicit hole markers
-            if (element.getAttribute('data-hole') === 'true') {
-                return true;
-            }
-            
-            // Check fill attribute - no fill or white fill often indicates a hole
-            const fill = element.getAttribute('fill');
-            if (fill === 'none' || fill === '#fff' || fill === '#ffffff' || fill === 'white') {
-                return true;
-            }
-            
-            // For small circles with stroke, assume they're mounting holes
-            if (element.tagName.toLowerCase() === 'circle') {
-                const r = parseFloat(element.getAttribute('r'));
-                if (r < 10 && element.getAttribute('stroke')) {
-                    return true;
-                }
-            }
-            
-            // Default to not being a hole
-            return false;
-        }
+      // Parse SVG path data string into commands
+      function parseSVGPath(pathData) {
+          const commands = [];
+          const pathParser = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+          let match;
+          
+          while ((match = pathParser.exec(pathData)) !== null) {
+              const type = match[1];
+              const argsStr = match[2].trim();
+              let args = [];
+              
+              if (argsStr) {
+                  // Handle both comma and space separated values
+                  args = argsStr.replace(/,/g, ' ')
+                              .split(/\s+/)
+                              .map(parseFloat)
+                              .filter(arg => !isNaN(arg));
+              }
+              
+              commands.push({ type, args });
+          }
+          
+          return commands;
+      }
+      
+      // Create points to approximate an arc
+      function approximateArc(x1, y1, rx, ry, angle, largeArcFlag, sweepFlag, x2, y2) {
+          // Convert angle from degrees to radians
+          angle = angle * Math.PI / 180;
+          
+          // Simple approximation - just return end point for now
+          // For a more accurate implementation, additional math would be needed
+          return [{ x: x2, y: y2 }];
+      }
+      
+      function determineIfHole(element) {
+          // Check if the element has explicit hole markers
+          if (element.getAttribute('data-hole') === 'true') {
+              return true;
+          }
+          
+          // Check fill attribute - no fill or white fill often indicates a hole
+          const fill = element.getAttribute('fill');
+          if (fill === 'none' || fill === '#fff' || fill === '#ffffff' || fill === 'white') {
+              return true;
+          }
+          
+          // Check for path direction - clockwise paths are typically outer contours,
+          // counter-clockwise paths are typically holes in SVG
+          if (element.tagName.toLowerCase() === 'path') {
+              const pathData = element.getAttribute('d');
+              if (pathData && isCounterClockwise(pathData)) {
+                  return true;
+              }
+          }
+          
+          // For small circles with stroke, assume they're mounting holes
+          if (element.tagName.toLowerCase() === 'circle') {
+              const r = parseFloat(element.getAttribute('r'));
+              if (r < 10 && element.getAttribute('stroke')) {
+                  return true;
+              }
+          }
+          
+          // Default to not being a hole
+          return false;
+      }
+      
+      // Simplified check for counter-clockwise paths (for holes)
+      function isCounterClockwise(pathData) {
+          // This is a simplification - for a proper implementation,
+          // calculate the signed area of the polygon
+          // Counter-clockwise paths have negative signed area
+          
+          // For now, return false to treat paths as outer contours by default
+          return false;
+      }
         
         // Convert SVG to STL
         convertBtn.addEventListener('click', convertToSTL);
         
         function convertToSTL() {
-            if (!svgContent) return;
-            
-            const extrusionHeight = parseFloat(document.getElementById('extrusion-height').value);
-            const baseThickness = parseFloat(document.getElementById('base-thickness').value);
-            const resolution = parseFloat(document.getElementById('resolution').value);
-            
-            // Initialize Three.js scene
-            scene = new THREE.Scene();
-            const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
-            const renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(stlPreview.clientWidth, stlPreview.clientHeight);
-            renderer.setClearColor(0xf0f0f0);
-            
-            // Clear previous preview
-            stlPreview.innerHTML = '';
-            stlPreview.appendChild(renderer.domElement);
-            
-            // Create a master shape from the SVG paths
-            const masterShape = new THREE.Shape();
-            const holesArray = [];
-            
-            // Scale factor to fit the SVG to the preview
-            const scale = 0.5 / Math.max(svgViewBox.width, svgViewBox.height);
-            
-            // First, create the outer shapes
-            const outerContours = svgPaths.filter(path => !path.isHole);
-            if (outerContours.length > 0) {
-                // Use the first outer contour as the main shape
-                try {
-                    const firstPath = outerContours[0].pathData;
-                    createShapeFromPathData(masterShape, firstPath, scale);
-                } catch (e) {
-                    console.error('Error creating master shape:', e);
-                    createFallbackShape(masterShape);
-                }
+    if (!svgContent) return;
+    
+    const extrusionHeight = parseFloat(document.getElementById('extrusion-height').value);
+    const baseThickness = parseFloat(document.getElementById('base-thickness').value);
+    const resolution = parseFloat(document.getElementById('resolution').value);
+    
+    // Initialize Three.js scene
+    scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(stlPreview.clientWidth, stlPreview.clientHeight);
+    renderer.setClearColor(0xf0f0f0);
+    
+    // Clear previous preview
+    stlPreview.innerHTML = '';
+    stlPreview.appendChild(renderer.domElement);
+    
+    // Scale factor to fit the SVG to the preview
+    const scale = 0.5 / Math.max(svgViewBox.width, svgViewBox.height);
+    
+    // Process all outer contours as separate shapes
+    const outerContours = svgPaths.filter(path => !path.isHole);
+    const shapes = [];
+    
+    if (outerContours.length > 0) {
+        // Create shapes from all outer contours
+        outerContours.forEach(contour => {
+            const shape = new THREE.Shape();
+            try {
+                createShapeFromPathData(shape, contour.pathData, scale);
                 
-                // Process holes
-                const holes = svgPaths.filter(path => path.isHole);
-                holes.forEach(holePath => {
-                    try {
-                        const hole = new THREE.Shape();
-                        createShapeFromPathData(hole, holePath.pathData, scale);
-                        holesArray.push(hole);
-                    } catch (e) {
-                        console.error('Error creating hole:', e);
-                    }
+                // Find holes that belong to this contour
+                const holes = svgPaths.filter(path => path.isHole).map(holePath => {
+                    const hole = new THREE.Shape();
+                    createShapeFromPathData(hole, holePath.pathData, scale);
+                    return hole;
                 });
                 
-                // Add holes to the master shape
-                masterShape.holes = holesArray;
-            } else {
-                // No outer contours found, create a fallback shape
-                createFallbackShape(masterShape);
+                // Add holes to the shape
+                shape.holes = holes;
+                shapes.push(shape);
+            } catch (e) {
+                console.error('Error creating shape:', e);
             }
-            
-            // Extrusion settings
-            const extrudeSettings = {
-                steps: 1,
-                depth: extrusionHeight,
-                bevelEnabled: false
-            };
-            
-            // Create the 3D geometry
-            const geometry = new THREE.ExtrudeGeometry(masterShape, extrudeSettings);
-            const material = new THREE.MeshStandardMaterial({ 
-                color: 0x2194ce,
-                side: THREE.DoubleSide
-            });
-            
-            const mesh = new THREE.Mesh(geometry, material);
-            
-            // Center the model
-            geometry.computeBoundingBox();
-            const boundingBox = geometry.boundingBox;
-            const center = new THREE.Vector3();
-            boundingBox.getCenter(center);
-            geometry.translate(-center.x, -center.y, -extrusionHeight/2);
-            
-            scene.add(mesh);
-            
-            // Add lighting
-            const ambientLight = new THREE.AmbientLight(0x404040);
-            scene.add(ambientLight);
-            
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            directionalLight.position.set(1, 1, 1);
-            scene.add(directionalLight);
-            
-            // Add a second light from another angle
-            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
-            directionalLight2.position.set(-1, -1, 1);
-            scene.add(directionalLight2);
-            
-            // Position camera to better frame the model
-            const size = boundingBox.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const fov = camera.fov * (Math.PI / 180);
-            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-            
-            // Add some margin
-            cameraZ *= 1.5;
-            
-            camera.position.z = cameraZ;
-            
-            // Set up orbit controls for better preview interaction
-            setupOrbitControls(camera, renderer);
-            
-            // Enable download button
-            downloadBtn.disabled = false;
-            
-            // Generate binary STL data
-            generateSTLData(geometry);
-        }
+        });
+    }
+    
+    // If no valid shapes were created, use a fallback
+    if (shapes.length === 0) {
+        const fallbackShape = new THREE.Shape();
+        createFallbackShape(fallbackShape);
+        shapes.push(fallbackShape);
+    }
+    
+    // Create a group to hold all the extruded meshes
+    const group = new THREE.Group();
+    
+    // Extrusion settings for solid model
+    const extrudeSettings = {
+        steps: 1,
+        depth: extrusionHeight,
+        bevelEnabled: false
+    };
+    
+    // Create extruded geometries for all shapes
+    shapes.forEach(shape => {
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x2194ce,
+            side: THREE.DoubleSide
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        group.add(mesh);
+    });
+    
+    scene.add(group);
+    
+    // Center the model
+    const box = new THREE.Box3().setFromObject(group);
+    const center = box.getCenter(new THREE.Vector3());
+    group.position.set(-center.x, -center.y, -extrusionHeight/2);
+    
+    // Add lighting
+    const ambientLight = new THREE.AmbientLight(0x404040);
+    scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(1, 1, 1);
+    scene.add(directionalLight);
+    
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+    directionalLight2.position.set(-1, -1, 1);
+    scene.add(directionalLight2);
+    
+    // Position camera to better frame the model
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = camera.fov * (Math.PI / 180);
+    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+    
+    // Add some margin
+    cameraZ *= 1.5;
+    
+    camera.position.z = cameraZ;
+    
+    // Set up orbit controls for better preview interaction
+    setupOrbitControls(camera, renderer);
+    
+    // Enable download button
+    downloadBtn.disabled = false;
+    
+    // Generate binary STL data
+    generateSTLData(group);
+}
         
         // Helper to set up orbit controls
         function setupOrbitControls(camera, renderer) {
-            // Store animation reference to allow cancellation
-            let animationFrameId;
-            
-            // Check if OrbitControls is available
-            if (typeof THREE.OrbitControls !== 'undefined') {
-                const controls = new THREE.OrbitControls(camera, renderer.domElement);
-                controls.enableDamping = true;
-                controls.dampingFactor = 0.25;
-                controls.enableZoom = true;
-                controls.zoomSpeed = 1.2;
-                controls.enablePan = true;
-                controls.autoRotate = true;
-                controls.autoRotateSpeed = 1.0;
-                controls.minDistance = 1;
-                controls.maxDistance = 1000;
-                
-                // Add instruction div
-                const instructionDiv = document.createElement('div');
-                instructionDiv.style.position = 'absolute';
-                instructionDiv.style.bottom = '10px';
-                instructionDiv.style.left = '50%';
-                instructionDiv.style.transform = 'translateX(-50%)';
-                instructionDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
-                instructionDiv.style.color = 'white';
-                instructionDiv.style.padding = '5px 10px';
-                instructionDiv.style.borderRadius = '4px';
-                instructionDiv.style.fontSize = '12px';
-                instructionDiv.style.pointerEvents = 'none';
-                instructionDiv.textContent = 'Left click: Rotate | Right click: Pan | Scroll: Zoom';
-                stlPreview.appendChild(instructionDiv);
-                
-                // Update the rendering loop
-                function animate() {
-                    animationFrameId = requestAnimationFrame(animate);
-                    controls.update();
-                    renderer.render(scene, camera);
-                }
-                animate();
-            } else {
-                // Simple rotation if OrbitControls is not available
-                function animate() {
-                    animationFrameId = requestAnimationFrame(animate);
-                    scene.rotation.x += 0.005;
-                    scene.rotation.y += 0.005;
-                    renderer.render(scene, camera);
-                }
-                animate();
-            }
-            
-            // Cancel animation on window unload to prevent memory leaks
-            window.addEventListener('unload', () => {
-                if (animationFrameId) {
-                    cancelAnimationFrame(animationFrameId);
-                }
-            });
+    // Cancel any previous animations first
+    if (window.previousAnimationFrameId) {
+        cancelAnimationFrame(window.previousAnimationFrameId);
+    }
+    
+    let animationFrameId;
+    
+    if (typeof THREE.OrbitControls !== 'undefined') {
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.25;
+        controls.enableZoom = true;
+        controls.zoomSpeed = 1.2;
+        controls.enablePan = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 1.0;
+        controls.minDistance = 1;
+        controls.maxDistance = 1000;
+        
+        // Add instruction div if it doesn't exist
+        let instructionDiv = stlPreview.querySelector('.controls-info');
+        if (!instructionDiv) {
+            instructionDiv = document.createElement('div');
+            instructionDiv.className = 'controls-info';
+            instructionDiv.style.position = 'absolute';
+            instructionDiv.style.bottom = '10px';
+            instructionDiv.style.left = '50%';
+            instructionDiv.style.transform = 'translateX(-50%)';
+            instructionDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            instructionDiv.style.color = 'white';
+            instructionDiv.style.padding = '5px 10px';
+            instructionDiv.style.borderRadius = '4px';
+            instructionDiv.style.fontSize = '12px';
+            instructionDiv.style.pointerEvents = 'none';
+            instructionDiv.textContent = 'Left click: Rotate | Right click: Pan | Scroll: Zoom';
+            stlPreview.appendChild(instructionDiv);
         }
+        
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+    } else {
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+            scene.rotation.x += 0.005;
+            scene.rotation.y += 0.005;
+            renderer.render(scene, camera);
+        }
+        animate();
+    }
+    
+    // Store animation reference globally to allow cancellation on next conversion
+    window.previousAnimationFrameId = animationFrameId;
+    
+    // Clean up on window unload
+    window.addEventListener('unload', () => {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+        }
+    });
+}
         
         // Create a simple fallback shape if parsing fails
         function createFallbackShape(shape) {
@@ -600,27 +782,30 @@
             shape.lineTo(-30, -20);
         }
         
-        // Create a three.js shape from SVG path data
-        function createShapeFromPathData(shape, pathData, scale) {
-            // This is a simplified version - in a full implementation, 
-            // we'd need to parse the SVG path data properly
-            
-            // For now, we'll simulate with a simple shape
-            if (pathData.includes('rx') || pathData.includes('circle')) {
-                // Assume it's a circle or rounded rectangle path
-                shape.absarc(0, 0, 20 * scale, 0, Math.PI * 2, false);
-            } else {
-                // Assume it's a rectangle-like path
-                const size = 40 * scale;
-                shape.moveTo(-size, -size);
-                shape.lineTo(size, -size);
-                shape.lineTo(size, size);
-                shape.lineTo(-size, size);
-            }
-        }
         
-        function generateSTLData(geometry) {
-            // Extract triangles from Three.js geometry
+        function generateSTLData(group) {
+            try {
+                // Combine all geometries in the group
+                const geometries = [];
+                group.traverse(child => {
+                    if (child instanceof THREE.Mesh) {
+                        geometries.push(child.geometry);
+                    }
+                });
+                
+                if (geometries.length === 0) {
+                    console.error('No geometries found in group');
+                    return createFallbackSTL();
+                }
+                
+                // Merge geometries if multiple exist
+                let mergedGeometry;
+                if (geometries.length > 1) {
+                    mergedGeometry = BufferGeometryUtils.mergeBufferGeometries(geometries);
+                } else {
+                    mergedGeometry = geometries[0];
+                }
+                
             if (!geometry) {
                 console.error('No geometry provided for STL generation');
                 return createFallbackSTL();
