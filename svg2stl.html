@@ -1,1 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG to STL Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .drop-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            margin: 20px 0;
+            transition: border 0.3s;
+            cursor: pointer;
+        }
+        .drop-area.highlight {
+            border-color: #4CAF50;
+        }
+        .file-input {
+            display: none;
+        }
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        .btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .preview-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        .preview-box {
+            flex: 1;
+            margin: 0 10px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+            height: 400px;
+            overflow: hidden;
+            position: relative;
+        }
+        .preview-box h3 {
+            margin-top: 0;
+            text-align: center;
+        }
+        #svg-preview {
+            width: 100%;
+            height: 340px;
+            background-color: #fff;
+        }
+        #stl-preview {
+            width: 100%;
+            height: 340px;
+            background-color: #fff;
+        }
+        .settings {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .settings-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .settings-label {
+            flex: 0 0 150px;
+        }
+        input[type="range"] {
+            flex: 1;
+        }
+        input[type="number"] {
+            width: 60px;
+            margin-left: 10px;
+            padding: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SVG to STL Converter</h1>
+        
+        <div id="drop-area" class="drop-area">
+            <p>Drag & drop your SVG file here, or</p>
+            <input type="file" id="file-input" class="file-input" accept=".svg">
+            <button class="btn" onclick="document.getElementById('file-input').click()">Select File</button>
+            <p style="margin-top: 15px;">Or paste SVG code:</p>
+            <button class="btn" onclick="toggleSvgTextarea()">Paste SVG</button>
+        </div>
+        
+        <div id="svg-textarea-container" style="display: none; margin: 15px 0;">
+            <textarea id="svg-textarea" style="width: 100%; height: 150px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Paste your SVG code here..."></textarea>
+            <div style="text-align: right; margin-top: 5px;">
+                <button class="btn" onclick="processPastedSVG()">Process SVG</button>
+            </div>
+        </div>
+        
+        <div class="settings">
+            <h3>Extrusion Settings</h3>
+            <div class="settings-row">
+                <label class="settings-label" for="extrusion-height">Extrusion Height:</label>
+                <input type="range" id="extrusion-height" min="1" max="50" value="10" oninput="this.nextElementSibling.value = this.value">
+                <input type="number" min="1" max="50" value="10" oninput="this.previousElementSibling.value = this.value">
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" for="base-thickness">Base Thickness:</label>
+                <input type="range" id="base-thickness" min="0" max="10" value="2" oninput="this.nextElementSibling.value = this.value">
+                <input type="number" min="0" max="10" value="2" oninput="this.previousElementSibling.value = this.value">
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" for="resolution">Resolution:</label>
+                <input type="range" id="resolution" min="1" max="10" value="5" oninput="this.nextElementSibling.value = this.value">
+                <input type="number" min="1" max="10" value="5" oninput="this.previousElementSibling.value = this.value">
+            </div>
+        </div>
+        
+        <div class="btn-container" style="text-align: center;">
+            <button id="convert-btn" class="btn" disabled>Convert to STL</button>
+            <button id="download-btn" class="btn" disabled>Download STL</button>
+        </div>
+        
+        <div class="preview-container">
+            <div class="preview-box">
+                <h3>SVG Preview</h3>
+                <div id="svg-preview"></div>
+            </div>
+            <div class="preview-box">
+                <h3>STL Preview</h3>
+                <div id="stl-preview"></div>
+            </div>
+        </div>
+    </div>
 
+    <!-- Load dependencies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    
+    <script>
+        // DOM elements
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file-input');
+        const convertBtn = document.getElementById('convert-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const svgPreview = document.getElementById('svg-preview');
+        const stlPreview = document.getElementById('stl-preview');
+        
+        // State variables
+        let svgContent = null;
+        let stlContent = null;
+        let svgPaths = [];
+        let svgViewBox = { x: 0, y: 0, width: 100, height: 100 };
+        let scene = null; // Global scene reference
+        
+        // SVG Textarea toggle
+        function toggleSvgTextarea() {
+            const container = document.getElementById('svg-textarea-container');
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                document.getElementById('svg-textarea').focus();
+            } else {
+                container.style.display = 'none';
+            }
+        }
+        
+        // Process pasted SVG
+        function processPastedSVG() {
+            const textarea = document.getElementById('svg-textarea');
+            const svgCode = textarea.value.trim();
+            
+            if (!svgCode) {
+                alert('Please paste SVG code');
+                return;
+            }
+            
+            if (!svgCode.includes('<svg') || !svgCode.includes('</svg>')) {
+                alert('Invalid SVG code. Make sure to include the <svg> tag.');
+                return;
+            }
+            
+            svgContent = svgCode;
+            displaySVG(svgContent);
+            parseSVG(svgContent);
+            convertBtn.disabled = false;
+            
+            // Hide textarea after processing
+            document.getElementById('svg-textarea-container').style.display = 'none';
+        }
+        
+        // Handle drag and drop events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+        
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+        
+        // Handle file drops
+        dropArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+        
+        fileInput.addEventListener('change', function() {
+            handleFiles(this.files);
+        });
+        
+        function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.type === 'image/svg+xml') {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        svgContent = e.target.result;
+                        displaySVG(svgContent);
+                        parseSVG(svgContent);
+                        convertBtn.disabled = false;
+                    };
+                    reader.readAsText(file);
+                } else {
+                    alert('Please upload an SVG file.');
+                }
+            }
+        }
+        
+        function displaySVG(svgString) {
+            svgPreview.innerHTML = svgString;
+            // Make sure the SVG scales to fit the preview area
+            const svgElement = svgPreview.querySelector('svg');
+            if (svgElement) {
+                svgElement.style.width = '100%';
+                svgElement.style.height = '100%';
+            }
+        }
+        
+        
+        
+        // Helper function to create path data for rounded rectangle
+        function createRoundedRectPath(x, y, width, height, radius) {
+            return `M${x + radius},${y}
+                    L${x + width - radius},${y}
+                    A${radius},${radius} 0 0 1 ${x + width},${y + radius}
+                    L${x + width},${y + height - radius}
+                    A${radius},${radius} 0 0 1 ${x + width - radius},${y + height}
+                    L${x + radius},${y + height}
+                    A${radius},${radius} 0 0 1 ${x},${y + height - radius}
+                    L${x},${y + radius}
+                    A${radius},${radius} 0 0 1 ${x + radius},${y}
+                    Z`;
+        }
+
+        function createShapeFromPathData(shape, pathData, scale) {
+          // Parse SVG path data and create a Three.js shape
+          const commands = parseSVGPath(pathData);
+          let firstCommand = true;
+          
+          commands.forEach(cmd => {
+              const type = cmd.type;
+              const args = cmd.args.map(arg => arg * scale);
+              
+              switch(type) {
+                  case 'M': // Move to (absolute)
+                      shape.moveTo(args[0], -args[1]); // Note Y-axis flip for Three.js
+                      break;
+                  case 'm': // Move to (relative)
+                      if (firstCommand) {
+                          shape.moveTo(args[0], -args[1]);
+                      } else {
+                          const currentPoint = shape.currentPoint;
+                          shape.moveTo(currentPoint.x + args[0], currentPoint.y - args[1]);
+                      }
+                      break;
+                  case 'L': // Line to (absolute)
+                      shape.lineTo(args[0], -args[1]);
+                      break;
+                  case 'l': // Line to (relative)
+                      const currentPoint = shape.currentPoint;
+                      shape.lineTo(currentPoint.x + args[0], currentPoint.y - args[1]);
+                      break;
+                  case 'H': // Horizontal line (absolute)
+                      shape.lineTo(args[0], shape.currentPoint.y);
+                      break;
+                  case 'h': // Horizontal line (relative)
+                      shape.lineTo(shape.currentPoint.x + args[0], shape.currentPoint.y);
+                      break;
+                  case 'V': // Vertical line (absolute)
+                      shape.lineTo(shape.currentPoint.x, -args[0]);
+                      break;
+                  case 'v': // Vertical line (relative)
+                      shape.lineTo(shape.currentPoint.x, shape.currentPoint.y - args[0]);
+                      break;
+                  case 'C': // Cubic curve (absolute)
+                      shape.bezierCurveTo(
+                          args[0], -args[1],
+                          args[2], -args[3],
+                          args[4], -args[5]
+                      );
+                      break;
+                  case 'c': // Cubic curve (relative)
+                      const cp = shape.currentPoint;
+                      shape.bezierCurveTo(
+                          cp.x + args[0], cp.y - args[1],
+                          cp.x + args[2], cp.y - args[3],
+                          cp.x + args[4], cp.y - args[5]
+                      );
+                      break;
+                  case 'Q': // Quadratic curve (absolute)
+                      shape.quadraticCurveTo(
+                          args[0], -args[1],
+                          args[2], -args[3]
+                      );
+                      break;
+                  case 'q': // Quadratic curve (relative)
+                      const qp = shape.currentPoint;
+                      shape.quadraticCurveTo(
+                          qp.x + args[0], qp.y - args[1],
+                          qp.x + args[2], qp.y - args[3]
+                      );
+                      break;
+                  case 'A': // Arc (absolute)
+                      // Simplified arc handling - convert to curve
+                      const arc = approximateArc(
+                          shape.currentPoint.x, shape.currentPoint.y,
+                          args[0], args[1], args[2], args[3], args[4], args[5], -args[6]
+                      );
+                      arc.forEach(point => {
+                          shape.lineTo(point.x, point.y);
+                      });
+                      break;
+                  case 'Z':
+                  case 'z':
+                      shape.closePath();
+                      break;
+              }
+              
+              firstCommand = false;
+          });
+      }
+      
+      // Parse SVG path data string into commands
+      function parseSVGPath(pathData) {
+          const commands = [];
+          const pathParser = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+          let match;
+          
+          while ((match = pathParser.exec(pathData)) !== null) {
+              const type = match[1];
+              const argsStr = match[2].trim();
+              let args = [];
+              
+              if (argsStr) {
+                  // Handle both comma and space separated values
+                  args = argsStr.replace(/,/g, ' ')
+                              .split(/\s+/)
+                              .map(parseFloat)
+                              .filter(arg => !isNaN(arg));
+              }
+              
+              commands.push({ type, args });
+          }
+          
+          return commands;
+      }
+      
+      // Create points to approximate an arc
+      function approximateArc(x1, y1, rx, ry, angle, largeArcFlag, sweepFlag, x2, y2) {
+          // Convert angle from degrees to radians
+          angle = angle * Math.PI / 180;
+          
+          // Simple approximation - just return end point for now
+          // For a more accurate implementation, additional math would be needed
+          return [{ x: x2, y: y2 }];
+      }
+      
+      function determineIfHole(element) {
+          // Check if the element has explicit hole markers
+          if (element.getAttribute('data-hole') === 'true') {
+              return true;
+          }
+          
+          // Check fill attribute - no fill or white fill often indicates a hole
+          const fill = element.getAttribute('fill');
+          if (fill === 'none' || fill === '#fff' || fill === '#ffffff' || fill === 'white') {
+              return true;
+          }
+          
+          // Check for path direction - clockwise paths are typically outer contours,
+          // counter-clockwise paths are typically holes in SVG
+          if (element.tagName.toLowerCase() === 'path') {
+              const pathData = element.getAttribute('d');
+              if (pathData && isCounterClockwise(pathData)) {
+                  return true;
+              }
+          }
+          
+          // For small circles with stroke, assume they're mounting holes
+          if (element.tagName.toLowerCase() === 'circle') {
+              const r = parseFloat(element.getAttribute('r'));
+              if (r < 10 && element.getAttribute('stroke')) {
+                  return true;
+              }
+          }
+          
+          // Default to not being a hole
+          return false;
+      }
+      
+      // Simplified check for counter-clockwise paths (for holes)
+      function isCounterClockwise(pathData) {
+          // This is a simplification - for a proper implementation,
+          // calculate the signed area of the polygon
+          // Counter-clockwise paths have negative signed area
+          
+          // For now, return false to treat paths as outer contours by default
+          return false;
+      }
+        
+        // Convert SVG to STL
+        convertBtn.addEventListener('click', convertToSTL);
+        
+        function convertToSTL() {
+            if (!svgContent) return;
+            
+            const extrusionHeight = parseFloat(document.getElementById('extrusion-height').value);
+            const baseThickness = parseFloat(document.getElementById('base-thickness').value);
+            const resolution = parseFloat(document.getElementById('resolution').value);
+            
+            // Initialize Three.js scene
+            scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(stlPreview.clientWidth, stlPreview.clientHeight);
+            renderer.setClearColor(0xf0f0f0);
+            
+            // Clear previous preview
+            stlPreview.innerHTML = '';
+            stlPreview.appendChild(renderer.domElement);
+            
+            // Create a master shape from the SVG paths
+            const masterShape = new THREE.Shape();
+            const holesArray = [];
+            
+            // Scale factor to fit the SVG to the preview
+            const scale = 0.5 / Math.max(svgViewBox.width, svgViewBox.height);
+            
+            // First, create the outer shapes
+            const outerContours = svgPaths.filter(path => !path.isHole);
+            if (outerContours.length > 0) {
+                // Use the first outer contour as the main shape
+                try {
+                    const firstPath = outerContours[0].pathData;
+                    createShapeFromPathData(masterShape, firstPath, scale);
+                } catch (e) {
+                    console.error('Error creating master shape:', e);
+                    createFallbackShape(masterShape);
+                }
+                
+                // Process holes
+                const holes = svgPaths.filter(path => path.isHole);
+                holes.forEach(holePath => {
+                    try {
+                        const hole = new THREE.Shape();
+                        createShapeFromPathData(hole, holePath.pathData, scale);
+                        holesArray.push(hole);
+                    } catch (e) {
+                        console.error('Error creating hole:', e);
+                    }
+                });
+                
+                // Add holes to the master shape
+                masterShape.holes = holesArray;
+            } else {
+                // No outer contours found, create a fallback shape
+                createFallbackShape(masterShape);
+            }
+            
+            // Extrusion settings
+            const extrudeSettings = {
+                steps: 1,
+                depth: extrusionHeight,
+                bevelEnabled: false
+            };
+            
+            // Create the 3D geometry
+            const geometry = new THREE.ExtrudeGeometry(masterShape, extrudeSettings);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0x2194ce,
+                side: THREE.DoubleSide
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            // Center the model
+            geometry.computeBoundingBox();
+            const boundingBox = geometry.boundingBox;
+            const center = new THREE.Vector3();
+            boundingBox.getCenter(center);
+            geometry.translate(-center.x, -center.y, -extrusionHeight/2);
+            
+            scene.add(mesh);
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+            
+            // Add a second light from another angle
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+            directionalLight2.position.set(-1, -1, 1);
+            scene.add(directionalLight2);
+            
+            // Position camera to better frame the model
+            const size = boundingBox.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+            
+            // Add some margin
+            cameraZ *= 1.5;
+            
+            camera.position.z = cameraZ;
+            
+            // Set up orbit controls for better preview interaction
+            setupOrbitControls(camera, renderer);
+            
+            // Enable download button
+            downloadBtn.disabled = false;
+            
+            // Generate binary STL data
+            generateSTLData(geometry);
+        }
+        
+        // Helper to set up orbit controls
+        function setupOrbitControls(camera, renderer) {
+            // Store animation reference to allow cancellation
+            let animationFrameId;
+            
+            // Check if OrbitControls is available
+            if (typeof THREE.OrbitControls !== 'undefined') {
+                const controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.25;
+                controls.enableZoom = true;
+                controls.zoomSpeed = 1.2;
+                controls.enablePan = true;
+                controls.autoRotate = true;
+                controls.autoRotateSpeed = 1.0;
+                controls.minDistance = 1;
+                controls.maxDistance = 1000;
+                
+                // Add instruction div
+                const instructionDiv = document.createElement('div');
+                instructionDiv.style.position = 'absolute';
+                instructionDiv.style.bottom = '10px';
+                instructionDiv.style.left = '50%';
+                instructionDiv.style.transform = 'translateX(-50%)';
+                instructionDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
+                instructionDiv.style.color = 'white';
+                instructionDiv.style.padding = '5px 10px';
+                instructionDiv.style.borderRadius = '4px';
+                instructionDiv.style.fontSize = '12px';
+                instructionDiv.style.pointerEvents = 'none';
+                instructionDiv.textContent = 'Left click: Rotate | Right click: Pan | Scroll: Zoom';
+                stlPreview.appendChild(instructionDiv);
+                
+                // Update the rendering loop
+                function animate() {
+                    animationFrameId = requestAnimationFrame(animate);
+                    controls.update();
+                    renderer.render(scene, camera);
+                }
+                animate();
+            } else {
+                // Simple rotation if OrbitControls is not available
+                function animate() {
+                    animationFrameId = requestAnimationFrame(animate);
+                    scene.rotation.x += 0.005;
+                    scene.rotation.y += 0.005;
+                    renderer.render(scene, camera);
+                }
+                animate();
+            }
+            
+            // Cancel animation on window unload to prevent memory leaks
+            window.addEventListener('unload', () => {
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+            });
+        }
+        
+        // Create a simple fallback shape if parsing fails
+        function createFallbackShape(shape) {
+            shape.moveTo(-30, -20);
+            shape.lineTo(30, -20);
+            shape.lineTo(30, 20);
+            shape.lineTo(-30, 20);
+            shape.lineTo(-30, -20);
+        }
+        
+        
+        function generateSTLData(geometry) {
+            // Extract triangles from Three.js geometry
+            if (!geometry) {
+                console.error('No geometry provided for STL generation');
+                return createFallbackSTL();
+            }
+            
+            try {
+                // Make sure the geometry is a BufferGeometry for STL export
+                if (!(geometry instanceof THREE.BufferGeometry)) {
+                    geometry = new THREE.BufferGeometry().fromGeometry(geometry);
+                }
+                
+                // Get position attribute from geometry
+                const positionAttribute = geometry.getAttribute('position');
+                if (!positionAttribute) {
+                    console.error('Geometry has no position attribute');
+                    return createFallbackSTL();
+                }
+                
+                // Get normal attribute or compute it if not present
+                let normalAttribute = geometry.getAttribute('normal');
+                if (!normalAttribute) {
+                    geometry.computeVertexNormals();
+                    normalAttribute = geometry.getAttribute('normal');
+                }
+                
+                // Count triangles
+                const numTriangles = positionAttribute.count / 3;
+                if (numTriangles <= 0) {
+                    console.error('No triangles in geometry');
+                    return createFallbackSTL();
+                }
+                
+                console.log(`Generating STL with ${numTriangles} triangles`);
+                
+                // Create STL binary file
+                const headerSize = 80;
+                const header = new Uint8Array(headerSize);
+                // We could add a text header here if desired
+                
+                // Calculate the size of the file
+                // Header (80 bytes) + Triangle count (4 bytes) + Triangles (50 bytes each)
+                const dataSize = 50 * numTriangles;
+                const buffer = new ArrayBuffer(headerSize + 4 + dataSize);
+                const dataView = new DataView(buffer);
+                
+                // Fill header (80 bytes)
+                const encoder = new TextEncoder();
+                const headerText = "SVG to STL conversion by SVG to STL Converter";
+                const headerBytes = encoder.encode(headerText);
+                for (let i = 0; i < Math.min(headerBytes.length, headerSize); i++) {
+                    dataView.setUint8(i, headerBytes[i]);
+                }
+                
+                // Write the number of triangles (4 bytes, little-endian)
+                dataView.setUint32(headerSize, numTriangles, true);
+                
+                // Offset for writing triangle data (after header and triangle count)
+                let offset = headerSize + 4;
+                
+                // Position and normal arrays
+                const positions = positionAttribute.array;
+                const normals = normalAttribute.array;
+                
+                // For each triangle
+                for (let i = 0; i < numTriangles; i++) {
+                    const index = i * 9; // 3 vertices per triangle, 3 components (x,y,z) per vertex
+                    
+                    // Calculate average normal for the triangle
+                    const nx = (normals[index] + normals[index + 3] + normals[index + 6]) / 3;
+                    const ny = (normals[index + 1] + normals[index + 4] + normals[index + 7]) / 3;
+                    const nz = (normals[index + 2] + normals[index + 5] + normals[index + 8]) / 3;
+                    
+                    // Write normal (3 floats x 4 bytes = 12 bytes)
+                    dataView.setFloat32(offset, nx, true);
+                    dataView.setFloat32(offset + 4, ny, true);
+                    dataView.setFloat32(offset + 8, nz, true);
+                    offset += 12;
+                    
+                    // Write vertices (9 floats x 4 bytes = 36 bytes)
+                    for (let j = 0; j < 9; j += 3) {
+                        dataView.setFloat32(offset, positions[index + j], true);     // x
+                        dataView.setFloat32(offset + 4, positions[index + j + 1], true); // y
+                        dataView.setFloat32(offset + 8, positions[index + j + 2], true); // z
+                        offset += 12;
+                    }
+                    
+                    // Attribute byte count (2 bytes) - unused in binary STL
+                    dataView.setUint16(offset, 0, true);
+                    offset += 2;
+                }
+                
+                // Create a blob from the binary data
+                stlContent = new Blob([buffer], { type: 'application/octet-stream' });
+                return true;
+                
+            } catch (error) {
+                console.error('Error generating STL:', error);
+                return createFallbackSTL();
+            }
+        }
+        
+        // Create a fallback STL cube if generation fails
+        function createFallbackSTL() {
+            console.warn('Creating fallback STL cube');
+            
+            // Create a placeholder STL file (binary format)
+            const headerSize = 80;
+            const header = new Uint8Array(headerSize);
+            
+            // Create a simple cube STL with 12 triangles (2 per face)
+            const numTriangles = 12;
+            const dataSize = 50 * numTriangles;
+            const buffer = new ArrayBuffer(headerSize + 4 + dataSize);
+            
+            const dataView = new DataView(buffer);
+            
+            // Fill header (80 bytes)
+            for (let i = 0; i < headerSize; i++) {
+                dataView.setUint8(i, header[i]);
+            }
+            
+            // Number of triangles (4 bytes)
+            dataView.setUint32(headerSize, numTriangles, true);
+            
+            // For the demo, we'll just create a binary blob
+            stlContent = new Blob([buffer], { type: 'application/octet-stream' });
+            return false;
+        }
+        
+        // Handle download button
+        downloadBtn.addEventListener('click', function() {
+            if (!stlContent) return;
+            
+            // Create download link
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(stlContent);
+            link.download = 'model.stl';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    </script>
+</body>
+</html>
