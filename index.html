@@ -360,6 +360,9 @@
 				<span>×</span>
 				<input type="number" id="export-height" min="1" value="800" aria-label="Export height">
 			</div>
+			<div class="control-group">
+			    <button id="convert-to-stl">🧊Convert to STL</button>
+			</div>
 			
         </div>
         <div id="preview" role="region" aria-label="SVG Preview">
@@ -378,6 +381,15 @@
 	            <textarea id="export-output" readonly></textarea>
 	            <button id="copy-output">Copy to Clipboard</button>
 	        </div>
+	    </div>
+	</div>
+	<div id="stl-converter-modal" class="modal">
+	    <div class="modal-content" style="width: 90%; max-width: 1000px; height: 90vh; padding: 0;">
+	        <div class="modal-header">
+	            <h3>SVG to STL Converter</h3>
+	            <span class="close">&times;</span>
+	        </div>
+	        <iframe id="stl-converter-iframe" style="width: 100%; height: calc(100% - 50px); border: none;"></iframe>
 	    </div>
 	</div>
     </div>
@@ -408,6 +420,47 @@ let initialX, initialY, elementInitialX, elementInitialY;
 let svgScale = 1;
 let svgContainer = null;
 let canvasBoundary = null;
+
+const stlConverterModal = document.getElementById('stl-converter-modal');
+const stlConverterIframe = document.getElementById('stl-converter-iframe');
+const convertToStlBtn = document.getElementById('convert-to-stl');
+const stlModalClose = stlConverterModal.querySelector('.close');
+
+// Close STL converter modal
+stlModalClose.addEventListener('click', function() {
+    stlConverterModal.style.display = 'none';
+});
+
+// Handle clicks outside the modal content to close it
+window.addEventListener('click', function(e) {
+    if (e.target === stlConverterModal) {
+        stlConverterModal.style.display = 'none';
+    }
+});
+
+// Open STL converter modal
+convertToStlBtn.addEventListener('click', function() {
+    // Load iframe if not already loaded
+    if (!stlConverterIframe.src || stlConverterIframe.src === 'about:blank') {
+        stlConverterIframe.src = 'svg2stl.html?embedded=true';
+    }
+    
+    stlConverterModal.style.display = 'block';
+    
+    // Send SVG data once iframe is loaded
+    stlConverterIframe.onload = function() {
+        const svgString = getSvgString();
+        if (svgString) {
+            // Wait a bit to ensure iframe is fully initialized
+            setTimeout(() => {
+                stlConverterIframe.contentWindow.postMessage({
+                    type: 'svgData',
+                    content: svgString
+                }, '*');
+            }, 500);
+        }
+    };
+});
 
 function getSvgString() {
     const svg = svgContainer.querySelector('svg');
