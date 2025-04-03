@@ -646,15 +646,17 @@
                         // Sweep angle
                         let deltaAngle = angleBetween(ux, uy, vx, vy);
                         
-                        // Ensure proper sweep direction based on sweep flag
-                        if (sweepFlag === 0 && deltaAngle > 0) {
-                            deltaAngle -= 2 * Math.PI;
-                        } else if (sweepFlag === 1 && deltaAngle < 0) {
+                        // Ensure sweep direction matches the SVG flag in the Three.js coordinate system
+                        // SVG sweep=0 -> CCW -> positive angle in Three.js
+                        // SVG sweep=1 -> CW  -> negative angle in Three.js
+                        if (sweepFlag === 0 && deltaAngle < 0) { // SVG wants CCW, angle is CW -> add 2PI
                             deltaAngle += 2 * Math.PI;
+                        } else if (sweepFlag === 1 && deltaAngle > 0) { // SVG wants CW, angle is CCW -> subtract 2PI
+                            deltaAngle -= 2 * Math.PI;
                         }
-                        
+
                         // Generate points along the arc
-                        const numSegments = Math.max(16, Math.ceil(Math.abs(deltaAngle) * 16));
+                        const numSegments = Math.max(16, Math.ceil(Math.abs(deltaAngle) * 16 / (Math.PI / 2)));
                         for (let i = 1; i <= numSegments; i++) {
                             const theta = startAngle + (i / numSegments) * deltaAngle;
                             
