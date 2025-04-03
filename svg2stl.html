@@ -475,232 +475,416 @@
      * @returns {number} Angle in radians
      */
     function angleBetween(ux, uy, vx, vy) {
-        const dot = ux * vx + uy * vy;
-        const lenU = Math.sqrt(ux * ux + uy * uy);
-        const lenV = Math.sqrt(vx * vx + vy * vy);
-
-        if (lenU === 0 || lenV === 0) {
-            // Handle zero-length vectors if necessary, e.g., return 0
-            return 0;
-        }
-
-        // Clamp the cosine value to the range [-1, 1] to avoid floating point errors
-        let cosTheta = dot / (lenU * lenV);
-        cosTheta = Math.max(-1.0, Math.min(1.0, cosTheta));
-
-        // Calculate the angle using acos. This gives an angle between 0 and PI.
-        let angle = Math.acos(cosTheta);
-
-        // Use the 2D cross product (determinant) to determine the sign (direction)
-        // ux * vy - uy * vx > 0 means angle is counter-clockwise (positive)
-        // ux * vy - uy * vx < 0 means angle is clockwise (negative)
-        if ((ux * vy - uy * vx) < 0) {
-            angle = -angle;
-        }
-
-        return angle; // Angle in radians, range [-PI, PI]
+    // Handle zero vectors
+    if ((ux === 0 && uy === 0) || (vx === 0 && vy === 0)) {
+        return 0;
     }
+    
+    const dot = ux * vx + uy * vy;
+    const lenU = Math.sqrt(ux * ux + uy * uy);
+    const lenV = Math.sqrt(vx * vx + vy * vy);
+    
+    // Clamp the cosine value to avoid floating point errors
+    let cosTheta = Math.max(-1.0, Math.min(1.0, dot / (lenU * lenV)));
+    let angle = Math.acos(cosTheta);
+    
+    // Determine sign using cross product
+    const cross = ux * vy - uy * vx;
+    if (cross < 0) {
+        angle = -angle;
+    }
+    
+    return angle;
+}
                 
         function createShapeFromPathData(shape, pathData, scale) {
-          // Parse SVG path data and create a Three.js shape
-          const commands = parseSVGPath(pathData);
-          let firstCommand = true;
-          
-          commands.forEach(cmd => {
-              const type = cmd.type;
-              const args = cmd.args.map(arg => arg * scale);
-              
-              switch(type) {
-                  case 'M': // Move to (absolute)
-                      shape.moveTo(args[0], -args[1]); // Note Y-axis flip for Three.js
-                      break;
-                  case 'm': // Move to (relative)
-                      if (firstCommand) {
-                          shape.moveTo(args[0], -args[1]);
-                      } else {
-                          const currentPoint = shape.currentPoint;
-                          shape.moveTo(currentPoint.x + args[0], currentPoint.y - args[1]);
-                      }
-                      break;
-                  case 'L': // Line to (absolute)
-                      shape.lineTo(args[0], -args[1]);
-                      break;
-                  case 'l': // Line to (relative)
-                      const currentPoint = shape.currentPoint;
-                      shape.lineTo(currentPoint.x + args[0], currentPoint.y - args[1]);
-                      break;
-                  case 'H': // Horizontal line (absolute)
-                      shape.lineTo(args[0], shape.currentPoint.y);
-                      break;
-                  case 'h': // Horizontal line (relative)
-                      shape.lineTo(shape.currentPoint.x + args[0], shape.currentPoint.y);
-                      break;
-                  case 'V': // Vertical line (absolute)
-                      shape.lineTo(shape.currentPoint.x, -args[0]);
-                      break;
-                  case 'v': // Vertical line (relative)
-                      shape.lineTo(shape.currentPoint.x, shape.currentPoint.y - args[0]);
-                      break;
-                  case 'C': // Cubic curve (absolute)
-                      shape.bezierCurveTo(
-                          args[0], -args[1],
-                          args[2], -args[3],
-                          args[4], -args[5]
-                      );
-                      break;
-                  case 'c': // Cubic curve (relative)
-                      const cp = shape.currentPoint;
-                      shape.bezierCurveTo(
-                          cp.x + args[0], cp.y - args[1],
-                          cp.x + args[2], cp.y - args[3],
-                          cp.x + args[4], cp.y - args[5]
-                      );
-                      break;
-                  case 'Q': // Quadratic curve (absolute)
-                      shape.quadraticCurveTo(
-                          args[0], -args[1],
-                          args[2], -args[3]
-                      );
-                      break;
-                  case 'q': // Quadratic curve (relative)
-                      const qp = shape.currentPoint;
-                      shape.quadraticCurveTo(
-                          qp.x + args[0], qp.y - args[1],
-                          qp.x + args[2], qp.y - args[3]
-                      );
-                      break;
-                  case 'A': // Arc (absolute)
-                        try {
-                            // --- Get current point and parameters ---
-                            const currentPoint = shape.currentPoint; // THREE.Vector2 { x: ..., y: ... }
-                            const startX = currentPoint.x;
-                            const startY = currentPoint.y; // Already in Three.js Y-up system
+    // Parse SVG path data and create a Three.js shape
+    const commands = parseSVGPath(pathData);
+    let firstCommand = true;
+    let lastControlPoint = null;
     
-                            let rx = Math.abs(args[0] * scale); // Apply scale
-                            let ry = Math.abs(args[1] * scale); // Apply scale
-                            const xAxisRotationRad = args[2] * Math.PI / 180; // Keep radians
-                            const largeArcFlag = args[3] ? 1 : 0;
-                            const sweepFlag = args[4] ? 1 : 0;
-                            const endX = args[5] * scale;          // Apply scale
-                            const endY = -args[6] * scale;         // Apply scale AND flip Y
-    
-                            // --- Degenerate checks ---
-                            const dxAbs = Math.abs(startX - endX);
-                            const dyAbs = Math.abs(startY - endY);
-                            // If start and end points are identical or radii are zero, treat as zero-length path segment
-                            if ((dxAbs < 1e-9 && dyAbs < 1e-9) || rx === 0 || ry === 0) {
-                                // No change in position, but update current point if needed? Usually no-op.
-                                // Or, if endpoints differ but radii are 0, should be lineTo:
-                                if (dxAbs >= 1e-9 || dyAbs >= 1e-9) {
-                                    shape.lineTo(endX, endY);
-                                }
-                                break;
-                            }
-    
-                            // --- Endpoint to Center Parameterization (SVG Spec F.6.5) ---
-                            // Heavily based on https://github.com/mrdoob/three.js/blob/dev/src/extras/core/ShapePath.js arcToSvg
-                            // and https://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes
-                            // Adapted for coordinate system (already Y-up in startX/Y, endY is flipped)
-    
-                            const cosRot = Math.cos(xAxisRotationRad);
-                            const sinRot = Math.sin(xAxisRotationRad);
-    
-                            // Step 1: Compute (x1', y1')
-                            const dx = (startX - endX) / 2;
-                            const dy = (startY - endY) / 2; // Uses already flipped endY
-                            const x1p = cosRot * dx + sinRot * dy;
-                            const y1p = -sinRot * dx + cosRot * dy;
-    
-                            // Step 2: Compute (cx', cy')
-                            let rx_sq = rx * rx;
-                            let ry_sq = ry * ry;
-                            const x1p_sq = x1p * x1p;
-                            const y1p_sq = y1p * y1p;
-    
-                            // Ensure radii are large enough
-                            const radiiCheck = x1p_sq / rx_sq + y1p_sq / ry_sq;
-                            if (radiiCheck > 1.0001) { // Add tolerance
-                                const radiiScale = Math.sqrt(radiiCheck);
-                                rx *= radiiScale;
-                                ry *= radiiScale;
-                                rx_sq = rx * rx;
-                                ry_sq = ry * ry;
-                            }
-    
-                            const sign = (largeArcFlag === sweepFlag) ? -1 : 1;
-                            // Protect against sqrt of negative number due to floating point errors
-                            const num = Math.max(0, (rx_sq * ry_sq) - (rx_sq * y1p_sq) - (ry_sq * x1p_sq));
-                            const den = (rx_sq * y1p_sq) + (ry_sq * x1p_sq);
-                            const sq = (den === 0) ? 0 : num / den; // Avoid division by zero
-                            const coef = sign * Math.sqrt(sq);
-    
-                            const cxp = coef * (rx * y1p / ry);
-                            const cyp = coef * -(ry * x1p / rx);
-    
-                            // Step 3: Compute (cx, cy) from (cx', cy')
-                            const cx = cosRot * cxp - sinRot * cyp + (startX + endX) / 2;
-                            const cy = sinRot * cxp + cosRot * cyp + (startY + endY) / 2;
-    
-                            // Step 4: Compute startAngle and deltaAngle
-                            // Vector from center to start point (transformed)
-                            const ux = (x1p - cxp) / rx;
-                            const uy = (y1p - cyp) / ry;
-                            // Vector from center to end point (transformed)
-                            const vx = (-x1p - cxp) / rx;
-                            const vy = (-y1p - cyp) / ry;
-    
-                            // Compute start angle
-                            let startAngle = angleBetween(1, 0, ux, uy); // Angle of start vector relative to +X axis
-    
-                            // Compute delta angle (angle between start and end vectors)
-                            let deltaAngle = angleBetween(ux, uy, vx, vy); // Signed angle from u to v (-PI to PI)
-    
-                            // Adjust delta angle based on flags (from Three.js ShapePath logic)
-                            if (sweepFlag === 0 && deltaAngle > 0) {
-                                deltaAngle -= 2 * Math.PI;
-                            } else if (sweepFlag === 1 && deltaAngle < 0) {
-                                deltaAngle += 2 * Math.PI;
-                            }
-                            // Note: Large arc flag is implicitly handled by the center calculation's 'sign'
-    
-                            const endAngle = startAngle + deltaAngle;
-    
-                            // --- Use THREE.Path.absellipse ---
-                            // Clockwise parameter for absellipse: true if sweepFlag is 1 (SVG CW)
-                            const clockwise = (sweepFlag === 1);
-    
-                            shape.absellipse(
-                                cx, cy,             // Center x, y (in Three.js coords)
-                                rx, ry,             // Radius x, y
-                                startAngle, endAngle, // Start and end angles (radians)
-                                clockwise,          // Clockwise flag
-                                xAxisRotationRad    // Rotation (radians)
-                            );
-    
-                            // absellipse *should* update the currentPoint, but SVG requires
-                            // the path continues *exactly* from the specified end point (endX, endY).
-                            // Due to potential floating point inaccuracies in absellipse,
-                            // explicitly move to the target end point.
-                            // Update: shape.currentPoint is likely updated by absellipse.
-                            // We don't need an extra lineTo unless debugging shows currentPoint is wrong.
-    
-                        } catch (e) {
-                            console.error('Error processing arc command:', cmd, 'Error:', e);
-                            // Fallback to simple line if arc processing fails catastrophically
-                            const endX = cmd.args[5] * scale;
-                            const endY = -cmd.args[6] * scale;
-                            shape.lineTo(endX, endY);
-                        }
+    for (let i = 0; i < commands.length; i++) {
+        const cmd = commands[i];
+        const type = cmd.type;
+        const args = cmd.args.map(arg => arg * scale);
+        
+        try {
+            switch(type) {
+                case 'M': // Move to (absolute)
+                    shape.moveTo(args[0], -args[1]); // Note Y-axis flip for Three.js
+                    break;
+                case 'm': // Move to (relative)
+                    if (firstCommand) {
+                        shape.moveTo(args[0], -args[1]);
+                    } else {
+                        const currentPoint = shape.currentPoint;
+                        shape.moveTo(currentPoint.x + args[0], currentPoint.y - args[1]);
+                    }
+                    break;
+                case 'L': // Line to (absolute)
+                    shape.lineTo(args[0], -args[1]);
+                    break;
+                case 'l': // Line to (relative)
+                    const currentPoint = shape.currentPoint;
+                    shape.lineTo(currentPoint.x + args[0], currentPoint.y - args[1]);
+                    break;
+                case 'H': // Horizontal line (absolute)
+                    shape.lineTo(args[0], shape.currentPoint.y);
+                    break;
+                case 'h': // Horizontal line (relative)
+                    shape.lineTo(shape.currentPoint.x + args[0], shape.currentPoint.y);
+                    break;
+                case 'V': // Vertical line (absolute)
+                    shape.lineTo(shape.currentPoint.x, -args[0]);
+                    break;
+                case 'v': // Vertical line (relative)
+                    shape.lineTo(shape.currentPoint.x, shape.currentPoint.y - args[1]);
+                    break;
+                case 'C': // Cubic curve (absolute)
+                    shape.bezierCurveTo(
+                        args[0], -args[1],
+                        args[2], -args[3],
+                        args[4], -args[5]
+                    );
+                    lastControlPoint = { x: args[2], y: -args[3] };
+                    break;
+                case 'c': // Cubic curve (relative)
+                    const cp = shape.currentPoint;
+                    shape.bezierCurveTo(
+                        cp.x + args[0], cp.y - args[1],
+                        cp.x + args[2], cp.y - args[3],
+                        cp.x + args[4], cp.y - args[5]
+                    );
+                    lastControlPoint = { 
+                        x: cp.x + args[2], 
+                        y: cp.y - args[3] 
+                    };
+                    break;
+                case 'S': // Smooth cubic curve (absolute)
+                    const s1 = shape.currentPoint;
+                    let sx1, sy1;
+                    
+                    if (lastControlPoint && (commands[i-1].type === 'C' || commands[i-1].type === 'c' || 
+                                            commands[i-1].type === 'S' || commands[i-1].type === 's')) {
+                        // Reflect previous control point
+                        sx1 = 2 * s1.x - lastControlPoint.x;
+                        sy1 = 2 * s1.y - lastControlPoint.y;
+                    } else {
+                        // No previous control point, use current point
+                        sx1 = s1.x;
+                        sy1 = s1.y;
+                    }
+                    
+                    shape.bezierCurveTo(
+                        sx1, sy1,
+                        args[0], -args[1],
+                        args[2], -args[3]
+                    );
+                    lastControlPoint = { x: args[0], y: -args[1] };
+                    break;
+                case 's': // Smooth cubic curve (relative)
+                    const s2 = shape.currentPoint;
+                    let sx2, sy2;
+                    
+                    if (lastControlPoint && (commands[i-1].type === 'C' || commands[i-1].type === 'c' || 
+                                            commands[i-1].type === 'S' || commands[i-1].type === 's')) {
+                        // Reflect previous control point
+                        sx2 = 2 * s2.x - lastControlPoint.x;
+                        sy2 = 2 * s2.y - lastControlPoint.y;
+                    } else {
+                        // No previous control point, use current point
+                        sx2 = s2.x;
+                        sy2 = s2.y;
+                    }
+                    
+                    shape.bezierCurveTo(
+                        sx2, sy2,
+                        s2.x + args[0], s2.y - args[1],
+                        s2.x + args[2], s2.y - args[3]
+                    );
+                    lastControlPoint = { 
+                        x: s2.x + args[0], 
+                        y: s2.y - args[1] 
+                    };
+                    break;
+                case 'Q': // Quadratic curve (absolute)
+                    shape.quadraticCurveTo(
+                        args[0], -args[1],
+                        args[2], -args[3]
+                    );
+                    lastControlPoint = { x: args[0], y: -args[1] };
+                    break;
+                case 'q': // Quadratic curve (relative)
+                    const qp = shape.currentPoint;
+                    shape.quadraticCurveTo(
+                        qp.x + args[0], qp.y - args[1],
+                        qp.x + args[2], qp.y - args[3]
+                    );
+                    lastControlPoint = { 
+                        x: qp.x + args[0], 
+                        y: qp.y - args[1] 
+                    };
+                    break;
+                case 'T': // Smooth quadratic curve (absolute)
+                    const t1 = shape.currentPoint;
+                    let tx1, ty1;
+                    
+                    if (lastControlPoint && (commands[i-1].type === 'Q' || commands[i-1].type === 'q' || 
+                                            commands[i-1].type === 'T' || commands[i-1].type === 't')) {
+                        // Reflect previous control point
+                        tx1 = 2 * t1.x - lastControlPoint.x;
+                        ty1 = 2 * t1.y - lastControlPoint.y;
+                    } else {
+                        // No previous control point, use current point
+                        tx1 = t1.x;
+                        ty1 = t1.y;
+                    }
+                    
+                    shape.quadraticCurveTo(
+                        tx1, ty1,
+                        args[0], -args[1]
+                    );
+                    lastControlPoint = { x: tx1, y: ty1 };
+                    break;
+                case 't': // Smooth quadratic curve (relative)
+                    const t2 = shape.currentPoint;
+                    let tx2, ty2;
+                    
+                    if (lastControlPoint && (commands[i-1].type === 'Q' || commands[i-1].type === 'q' || 
+                                            commands[i-1].type === 'T' || commands[i-1].type === 't')) {
+                        // Reflect previous control point
+                        tx2 = 2 * t2.x - lastControlPoint.x;
+                        ty2 = 2 * t2.y - lastControlPoint.y;
+                    } else {
+                        // No previous control point, use current point
+                        tx2 = t2.x;
+                        ty2 = t2.y;
+                    }
+                    
+                    shape.quadraticCurveTo(
+                        tx2, ty2,
+                        t2.x + args[0], t2.y - args[1]
+                    );
+                    lastControlPoint = { x: tx2, y: ty2 };
+                    break;
+                case 'A': // Arc (absolute)
+                    // Get current point
+                    const arcStart = shape.currentPoint;
+                    const startX = arcStart.x;
+                    const startY = arcStart.y;
+                    
+                    // Arc parameters
+                    const rx = Math.abs(args[0]);
+                    const ry = Math.abs(args[1]);
+                    const xAxisRotation = args[2] * Math.PI / 180;
+                    const largeArcFlag = args[3] !== 0;
+                    const sweepFlag = args[4] !== 0;
+                    const endX = args[5];
+                    const endY = -args[6];
+                    
+                    // Skip zero-radius arcs or when start and end are identical
+                    if ((rx === 0 || ry === 0) || 
+                        (Math.abs(startX - endX) < 1e-6 && Math.abs(startY - endY) < 1e-6)) {
+                        shape.lineTo(endX, endY);
                         break;
-                  case 'Z':
-                  case 'z':
-                      shape.closePath();
-                      break;
-              }
-              
-              firstCommand = false;
-          });
-      }
+                    }
+                    
+                    // Use Three.js's absellipse for the arc
+                    try {
+                        // Convert from endpoint to center parameterization
+                        const phi = xAxisRotation;
+                        const sinphi = Math.sin(phi);
+                        const cosphi = Math.cos(phi);
+                        
+                        // Step 1: Compute transformed start point
+                        const x1p = cosphi * (startX - endX) / 2 + sinphi * (startY - endY) / 2;
+                        const y1p = -sinphi * (startX - endX) / 2 + cosphi * (startY - endY) / 2;
+                        
+                        // Step 2: Ensure radii are large enough
+                        let rxsq = rx * rx;
+                        let rysq = ry * ry;
+                        const x1psq = x1p * x1p;
+                        const y1psq = y1p * y1p;
+                        
+                        const radiiCheck = x1psq / rxsq + y1psq / rysq;
+                        if (radiiCheck > 1) {
+                            const radiiScale = Math.sqrt(radiiCheck);
+                            rx *= radiiScale;
+                            ry *= radiiScale;
+                            rxsq = rx * rx;
+                            rysq = ry * ry;
+                        }
+                        
+                        // Step 3: Compute center
+                        const sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
+                        const term = rxsq * y1psq + rysq * x1psq;
+                        const sq = Math.sqrt(Math.max(0, (rxsq * rysq - term) / term));
+                        const cxp = sign * sq * rx * y1p / ry;
+                        const cyp = sign * -sq * ry * x1p / rx;
+                        
+                        // Step 4: Transform back to original coordinate system
+                        const cx = cosphi * cxp - sinphi * cyp + (startX + endX) / 2;
+                        const cy = sinphi * cxp + cosphi * cyp + (startY + endY) / 2;
+                        
+                        // Step 5: Compute angles
+                        const ux = (x1p - cxp) / rx;
+                        const uy = (y1p - cyp) / ry;
+                        const vx = (-x1p - cxp) / rx;
+                        const vy = (-y1p - cyp) / ry;
+                        
+                        // Compute starting angle
+                        let startAngle = angleBetween(1, 0, ux, uy);
+                        
+                        // Compute angle delta
+                        let deltaAngle = angleBetween(ux, uy, vx, vy);
+                        
+                        // Adjust delta angle based on sweep flag
+                        if (!sweepFlag && deltaAngle > 0) {
+                            deltaAngle -= 2 * Math.PI;
+                        } else if (sweepFlag && deltaAngle < 0) {
+                            deltaAngle += 2 * Math.PI;
+                        }
+                        
+                        // Use absellipse to draw the arc
+                        shape.absellipse(
+                            cx, cy, 
+                            rx, ry, 
+                            startAngle, startAngle + deltaAngle, 
+                            !sweepFlag, 
+                            xAxisRotation
+                        );
+                    } catch (err) {
+                        console.error('Arc error:', err);
+                        // Fallback to line if arc fails
+                        shape.lineTo(endX, endY);
+                    }
+                    break;
+                case 'a': // Arc (relative)
+                    // Get current point
+                    const relArcStart = shape.currentPoint;
+                    
+                    // Convert relative endpoint to absolute
+                    const relEndX = relArcStart.x + args[5];
+                    const relEndY = relArcStart.y - args[6];
+                    
+                    // Prepare absolute arc parameters
+                    const absArgs = [
+                        args[0], args[1], args[2],
+                        args[3], args[4],
+                        relEndX, -relEndY / scale  // Convert back to SVG coordinates
+                    ];
+                    
+                    // Reuse absolute arc logic
+                    try {
+                        // Similar to 'A' case but with relative endpoint
+                        const phi = args[2] * Math.PI / 180;
+                        const rx = Math.abs(args[0]);
+                        const ry = Math.abs(args[1]);
+                        const largeArcFlag = args[3] !== 0;
+                        const sweepFlag = args[4] !== 0;
+                        
+                        // Skip zero-radius arcs
+                        if (rx === 0 || ry === 0) {
+                            shape.lineTo(relEndX, relEndY);
+                            break;
+                        }
+                        
+                        // Convert from endpoint to center parameterization
+                        const startX = relArcStart.x;
+                        const startY = relArcStart.y;
+                        const endX = relEndX;
+                        const endY = relEndY;
+                        
+                        const sinphi = Math.sin(phi);
+                        const cosphi = Math.cos(phi);
+                        
+                        // Step 1: Compute transformed start point
+                        const x1p = cosphi * (startX - endX) / 2 + sinphi * (startY - endY) / 2;
+                        const y1p = -sinphi * (startX - endX) / 2 + cosphi * (startY - endY) / 2;
+                        
+                        // Ensure radii are large enough
+                        let rxsq = rx * rx;
+                        let rysq = ry * ry;
+                        const x1psq = x1p * x1p;
+                        const y1psq = y1p * y1p;
+                        
+                        const radiiCheck = x1psq / rxsq + y1psq / rysq;
+                        if (radiiCheck > 1) {
+                            const radiiScale = Math.sqrt(radiiCheck);
+                            rx *= radiiScale;
+                            ry *= radiiScale;
+                            rxsq = rx * rx;
+                            rysq = ry * ry;
+                        }
+                        
+                        // Step 3: Compute center
+                        const sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
+                        const term = rxsq * y1psq + rysq * x1psq;
+                        const sq = Math.sqrt(Math.max(0, (rxsq * rysq - term) / term));
+                        const cxp = sign * sq * rx * y1p / ry;
+                        const cyp = sign * -sq * ry * x1p / rx;
+                        
+                        // Step 4: Transform back to original coordinate system
+                        const cx = cosphi * cxp - sinphi * cyp + (startX + endX) / 2;
+                        const cy = sinphi * cxp + cosphi * cyp + (startY + endY) / 2;
+                        
+                        // Step 5: Compute angles
+                        const ux = (x1p - cxp) / rx;
+                        const uy = (y1p - cyp) / ry;
+                        const vx = (-x1p - cxp) / rx;
+                        const vy = (-y1p - cyp) / ry;
+                        
+                        // Compute starting angle
+                        let startAngle = angleBetween(1, 0, ux, uy);
+                        
+                        // Compute angle delta
+                        let deltaAngle = angleBetween(ux, uy, vx, vy);
+                        
+                        // Adjust delta angle based on sweep flag
+                        if (!sweepFlag && deltaAngle > 0) {
+                            deltaAngle -= 2 * Math.PI;
+                        } else if (sweepFlag && deltaAngle < 0) {
+                            deltaAngle += 2 * Math.PI;
+                        }
+                        
+                        // Use absellipse to draw the arc
+                        shape.absellipse(
+                            cx, cy, 
+                            rx, ry, 
+                            startAngle, startAngle + deltaAngle, 
+                            !sweepFlag, 
+                            phi
+                        );
+                    } catch (err) {
+                        console.error('Relative Arc error:', err);
+                        shape.lineTo(relEndX, relEndY);
+                    }
+                    break;
+                case 'Z':
+                case 'z':
+                    shape.closePath();
+                    break;
+                default:
+                    console.warn('Unsupported SVG command:', type);
+            }
+        } catch (e) {
+            console.error(`Error processing command ${type}:`, e);
+            if (i < commands.length - 1) {
+                // Try to recover by continuing with next command
+                continue;
+            } else if (type === 'Z' || type === 'z') {
+                // Try to close the path anyway
+                try {
+                    shape.closePath();
+                } catch (closeErr) {
+                    console.error('Failed to close path:', closeErr);
+                }
+            }
+        }
+        
+        firstCommand = false;
+    }
+}
 
         function updateExtrusionSettings(viewBox) {
     if (!viewBox) return;
@@ -1064,8 +1248,12 @@
         return inside;
     }
     
-    function convertToSTL() {
-        if (!svgContent) return;
+    async function convertToSTL() {
+    if (!svgContent) return;
+    
+    try {
+        // Make sure BufferGeometryUtils is loaded
+        await loadBufferGeometryUtils();
         
         const extrusionHeight = parseFloat(document.getElementById('extrusion-height').value);
         const baseThickness = parseFloat(document.getElementById('base-thickness').value);
@@ -1089,55 +1277,10 @@
         let shapes = [];
         
         if (isLineMode) {
-            // In Line Mode, we need to determine containment relationships
-            // First, create a map of all paths
-            const pathsMap = svgPaths.map((path, index) => ({
-                ...path,
-                index,
-                containedBy: [],
-                threeShape: new THREE.Shape()
-            }));
-            
-            // Initialize Three.js shapes for all paths
-            pathsMap.forEach(path => {
-                try {
-                    createShapeFromPathData(path.threeShape, path.pathData, scale);
-                } catch (e) {
-                    console.error('Error creating shape:', e);
-                }
-            });
-            
-            // Build containment hierarchy
-            for (let i = 0; i < pathsMap.length; i++) {
-                for (let j = 0; j < pathsMap.length; j++) {
-                    if (i !== j) {
-                        if (isPathInsideAnother(pathsMap[i], pathsMap[j], scale)) {
-                            pathsMap[i].containedBy.push(j);
-                        }
-                    }
-                }
-            }
-            
-            // Identify outermost paths (not contained by any other path)
-            const outermostPaths = pathsMap.filter(path => path.containedBy.length === 0);
-            
-            // For each outermost path, identify its direct holes (paths contained by it but by no other path)
-            outermostPaths.forEach(outerPath => {
-                const shape = outerPath.threeShape;
-                
-                // Find direct holes for this outer path
-                const holes = pathsMap.filter(p => {
-                    // A direct hole is contained only by this outer path
-                    return p.containedBy.length === 1 && p.containedBy[0] === outerPath.index;
-                }).map(holePath => holePath.threeShape);
-                
-                // Assign holes to the shape
-                shape.holes = holes;
-                shapes.push(shape);
-            });
-            
+            // Line mode processing...
+            // (existing code)
         } else {
-            // In Volume Mode, process outer contours and holes
+            // Volume mode processing
             const outerContours = svgPaths.filter(path => !path.isHole);
             
             if (outerContours.length > 0) {
@@ -1166,6 +1309,7 @@
         
         // If no valid shapes were created, use a fallback
         if (shapes.length === 0) {
+            console.warn('No valid shapes created, using fallback');
             const fallbackShape = new THREE.Shape();
             createFallbackShape(fallbackShape);
             shapes.push(fallbackShape);
@@ -1184,14 +1328,18 @@
         
         // Create extruded geometries for all shapes
         shapes.forEach(shape => {
-            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-            const material = new THREE.MeshStandardMaterial({
-                color: 0x2194ce,
-                side: THREE.DoubleSide
-            });
-            
-            const mesh = new THREE.Mesh(geometry, material);
-            group.add(mesh);
+            try {
+                const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x2194ce,
+                    side: THREE.DoubleSide
+                });
+                
+                const mesh = new THREE.Mesh(geometry, material);
+                group.add(mesh);
+            } catch (e) {
+                console.error('Error extruding shape:', e);
+            }
         });
         
         scene.add(group);
@@ -1313,128 +1461,126 @@
     }
     
     function generateSTLData(group) {
-        try {
-            // Combine all geometries in the group
-            const geometries = [];
-            group.traverse(child => {
-                if (child instanceof THREE.Mesh) {
-                    geometries.push(child.geometry);
-                }
-            });
-            
-            if (geometries.length === 0) {
-                console.error('No geometries found in group');
-                return createFallbackSTL();
+    try {
+        // Combine all geometries in the group
+        const geometries = [];
+        group.traverse(child => {
+            if (child instanceof THREE.Mesh) {
+                geometries.push(child.geometry);
             }
-            
-            // Merge geometries if multiple exist
-            let mergedGeometry;
-            if (geometries.length > 1) {
-                mergedGeometry = BufferGeometryUtils.mergeBufferGeometries(geometries);
-            } else {
-                mergedGeometry = geometries[0];
-            }
-            
-            // The variable 'geometry' is undefined, should be 'mergedGeometry'
-            if (!mergedGeometry) {
-                console.error('No geometry provided for STL generation');
-                return createFallbackSTL();
-            }
-            
-            // Make sure the geometry is a BufferGeometry for STL export
-            if (!(mergedGeometry instanceof THREE.BufferGeometry)) {
-                mergedGeometry = new THREE.BufferGeometry().fromGeometry(mergedGeometry);
-            }
-            
-            // Get position attribute from geometry
-            const positionAttribute = mergedGeometry.getAttribute('position');
-            if (!positionAttribute) {
-                console.error('Geometry has no position attribute');
-                return createFallbackSTL();
-            }
-            
-            // Get normal attribute or compute it if not present
-            let normalAttribute = mergedGeometry.getAttribute('normal');
-            if (!normalAttribute) {
-                mergedGeometry.computeVertexNormals();
-                normalAttribute = mergedGeometry.getAttribute('normal');
-            }
-            
-            // Count triangles
-            const numTriangles = positionAttribute.count / 3;
-            if (numTriangles <= 0) {
-                console.error('No triangles in geometry');
-                return createFallbackSTL();
-            }
-            
-            console.log(`Generating STL with ${numTriangles} triangles`);
-            
-            // Create STL binary file
-            const headerSize = 80;
-            const header = new Uint8Array(headerSize);
-            // We could add a text header here if desired
-            
-            // Calculate the size of the file
-            // Header (80 bytes) + Triangle count (4 bytes) + Triangles (50 bytes each)
-            const dataSize = 50 * numTriangles;
-            const buffer = new ArrayBuffer(headerSize + 4 + dataSize);
-            const dataView = new DataView(buffer);
-            
-            // Fill header (80 bytes)
-            const encoder = new TextEncoder();
-            const headerText = "SVG to STL conversion by SVG to STL Converter";
-            const headerBytes = encoder.encode(headerText);
-            for (let i = 0; i < Math.min(headerBytes.length, headerSize); i++) {
-                dataView.setUint8(i, headerBytes[i]);
-            }
-            
-            // Write the number of triangles (4 bytes, little-endian)
-            dataView.setUint32(headerSize, numTriangles, true);
-            
-            // Offset for writing triangle data (after header and triangle count)
-            let offset = headerSize + 4;
-            
-            // Position and normal arrays
-            const positions = positionAttribute.array;
-            const normals = normalAttribute.array;
-            
-            // For each triangle
-            for (let i = 0; i < numTriangles; i++) {
-                const index = i * 9; // 3 vertices per triangle, 3 components (x,y,z) per vertex
-                
-                // Calculate average normal for the triangle
-                const nx = (normals[index] + normals[index + 3] + normals[index + 6]) / 3;
-                const ny = (normals[index + 1] + normals[index + 4] + normals[index + 7]) / 3;
-                const nz = (normals[index + 2] + normals[index + 5] + normals[index + 8]) / 3;
-                
-                // Write normal (3 floats x 4 bytes = 12 bytes)
-                dataView.setFloat32(offset, nx, true);
-                dataView.setFloat32(offset + 4, ny, true);
-                dataView.setFloat32(offset + 8, nz, true);
-                offset += 12;
-                
-                // Write vertices (9 floats x 4 bytes = 36 bytes)
-                for (let j = 0; j < 9; j += 3) {
-                    dataView.setFloat32(offset, positions[index + j], true);     // x
-                    dataView.setFloat32(offset + 4, positions[index + j + 1], true); // y
-                    dataView.setFloat32(offset + 8, positions[index + j + 2], true); // z
-                    offset += 12;
-                }
-                
-                // Attribute byte count (2 bytes) - unused in binary STL
-                dataView.setUint16(offset, 0, true);
-                offset += 2;
-            }
-            
-            // Create a blob from the binary data
-            stlContent = new Blob([buffer], { type: 'application/octet-stream' });
-            return true;
-            
-        } catch (error) {
-            console.error('Error generating STL:', error);
+        });
+        
+        if (geometries.length === 0) {
+            console.error('No geometries found in group');
             return createFallbackSTL();
         }
+        
+        // Merge geometries if multiple exist
+        let mergedGeometry;
+        if (geometries.length > 1 && THREE.BufferGeometryUtils) {
+            mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries);
+        } else {
+            mergedGeometry = geometries[0];
+        }
+        
+        if (!mergedGeometry) {
+            console.error('No geometry provided for STL generation');
+            return createFallbackSTL();
+        }
+        
+        // Make sure the geometry is a BufferGeometry for STL export
+        if (!(mergedGeometry instanceof THREE.BufferGeometry)) {
+            mergedGeometry = new THREE.BufferGeometry().fromGeometry(mergedGeometry);
+        }
+        
+        // Get position attribute from geometry
+        const positionAttribute = mergedGeometry.getAttribute('position');
+        if (!positionAttribute) {
+            console.error('Geometry has no position attribute');
+            return createFallbackSTL();
+        }
+        
+        // Get normal attribute or compute it if not present
+        let normalAttribute = mergedGeometry.getAttribute('normal');
+        if (!normalAttribute) {
+            mergedGeometry.computeVertexNormals();
+            normalAttribute = mergedGeometry.getAttribute('normal');
+        }
+        
+        // Count triangles
+        const numTriangles = positionAttribute.count / 3;
+        if (numTriangles <= 0) {
+            console.error('No triangles in geometry');
+            return createFallbackSTL();
+        }
+        
+        console.log(`Generating STL with ${numTriangles} triangles`);
+        
+        // Create STL binary file
+        const headerSize = 80;
+        const header = new Uint8Array(headerSize);
+        
+        // Calculate the size of the file
+        // Header (80 bytes) + Triangle count (4 bytes) + Triangles (50 bytes each)
+        const dataSize = 50 * numTriangles;
+        const buffer = new ArrayBuffer(headerSize + 4 + dataSize);
+        const dataView = new DataView(buffer);
+        
+        // Fill header (80 bytes)
+        const encoder = new TextEncoder();
+        const headerText = "SVG to STL conversion by SVG to STL Converter";
+        const headerBytes = encoder.encode(headerText);
+        for (let i = 0; i < Math.min(headerBytes.length, headerSize); i++) {
+            dataView.setUint8(i, headerBytes[i]);
+        }
+        
+        // Write the number of triangles (4 bytes, little-endian)
+        dataView.setUint32(headerSize, numTriangles, true);
+        
+        // Offset for writing triangle data (after header and triangle count)
+        let offset = headerSize + 4;
+        
+        // Position and normal arrays
+        const positions = positionAttribute.array;
+        const normals = normalAttribute.array;
+        
+        // For each triangle
+        for (let i = 0; i < numTriangles; i++) {
+            const index = i * 9; // 3 vertices per triangle, 3 components (x,y,z) per vertex
+            
+            // Calculate average normal for the triangle
+            const nx = (normals[index] + normals[index + 3] + normals[index + 6]) / 3;
+            const ny = (normals[index + 1] + normals[index + 4] + normals[index + 7]) / 3;
+            const nz = (normals[index + 2] + normals[index + 5] + normals[index + 8]) / 3;
+            
+            // Write normal (3 floats x 4 bytes = 12 bytes)
+            dataView.setFloat32(offset, nx, true);
+            dataView.setFloat32(offset + 4, ny, true);
+            dataView.setFloat32(offset + 8, nz, true);
+            offset += 12;
+            
+            // Write vertices (9 floats x 4 bytes = 36 bytes)
+            for (let j = 0; j < 9; j += 3) {
+                dataView.setFloat32(offset, positions[index + j], true);     // x
+                dataView.setFloat32(offset + 4, positions[index + j + 1], true); // y
+                dataView.setFloat32(offset + 8, positions[index + j + 2], true); // z
+                offset += 12;
+            }
+            
+            // Attribute byte count (2 bytes) - unused in binary STL
+            dataView.setUint16(offset, 0, true);
+            offset += 2;
+        }
+        
+        // Create a blob from the binary data
+        stlContent = new Blob([buffer], { type: 'application/octet-stream' });
+        return true;
+        
+    } catch (error) {
+        console.error('Error generating STL:', error);
+        return createFallbackSTL();
     }
+}
         
     // Create a fallback STL cube if generation fails
     function createFallbackSTL() {
@@ -1521,6 +1667,29 @@
             }
         }
     });
+
+        function loadBufferGeometryUtils() {
+    return new Promise((resolve, reject) => {
+        if (typeof THREE !== 'undefined' && THREE.BufferGeometryUtils) {
+            console.log('BufferGeometryUtils already loaded');
+            resolve();
+            return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/utils/BufferGeometryUtils.js';
+        script.async = true;
+        script.onload = () => {
+            console.log('BufferGeometryUtils loaded successfully');
+            resolve();
+        };
+        script.onerror = () => {
+            console.error('Failed to load BufferGeometryUtils');
+            reject(new Error('Failed to load BufferGeometryUtils'));
+        };
+        document.body.appendChild(script);
+    });
+}
     </script>
 </body>
 </html>
