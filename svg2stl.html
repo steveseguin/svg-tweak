@@ -533,60 +533,101 @@
                       );
                       break;
                   case 'A': // Arc (absolute)
-                    // Improved arc handling with better approximation
                     try {
                         // Get current point for start of arc
                         const startX = shape.currentPoint.x;
                         const startY = shape.currentPoint.y;
                         
                         // Get arc parameters
-                        const rx = args[0];
-                        const ry = args[1];
-                        const xAxisRotation = args[2];
-                        const largeArcFlag = args[3];
-                        const sweepFlag = args[4];
+                        const rx = Math.abs(args[0]); // Ensure positive radius
+                        const ry = Math.abs(args[1]);
+                        const xAxisRotation = args[2] * Math.PI / 180; // Convert to radians
+                        const largeArcFlag = args[3] ? 1 : 0;
+                        const sweepFlag = args[4] ? 1 : 0;
                         const endX = args[5];
                         const endY = -args[6];
                         
-                        // Generate points along the arc using improved approximation
-                        const numSegments = Math.max(8, Math.ceil((rx + ry) * scale * 0.25));
-                        
-                        // Convert to elliptical arc parameters
-                        // This is a simplified implementation that works for most common rounded rectangle cases
-                        const cx = (startX + endX) / 2;
-                        const cy = (startY + endY) / 2;
-                        
-                        // Determine angle span based on flags
-                        let startAngle, endAngle;
-                        if (sweepFlag === 0) {
-                            startAngle = 0;
-                            endAngle = Math.PI / 2;
-                        } else {
-                            startAngle = Math.PI / 2;
-                            endAngle = Math.PI;
+                        // Skip degenerate cases
+                        if (startX === endX && startY === endY) {
+                            break;
                         }
                         
-                        if (largeArcFlag === 1) {
-                            // Swap for large arc
-                            const temp = startAngle;
-                            startAngle = endAngle;
-                            endAngle = temp + Math.PI;
+                        if (rx === 0 || ry === 0) {
+                            shape.lineTo(endX, endY);
+                            break;
                         }
                         
-                        // Find center offset based on rx, ry
-                        const offsetX = Math.abs(startX - endX) / 2;
-                        const offsetY = Math.abs(startY - endY) / 2;
+                        // Approximation based on endpoint parameterization
+                        // SVG spec conversion from endpoint to center parameterization
                         
-                        // Generate arc points
+                        // Step 1: Compute transformed start point
+                        const dx = (startX - endX) / 2;
+                        const dy = (startY - endY) / 2;
+                        const x1p = Math.cos(xAxisRotation) * dx + Math.sin(xAxisRotation) * dy;
+                        const y1p = -Math.sin(xAxisRotation) * dx + Math.cos(xAxisRotation) * dy;
+                        
+                        // Step 2: Ensure radii are large enough
+                        const radiiCheck = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+                        let rxFinal = rx, ryFinal = ry;
+                        if (radiiCheck > 1) {
+                            const radiiScale = Math.sqrt(radiiCheck);
+                            rxFinal = radiiScale * rx;
+                            ryFinal = radiiScale * ry;
+                        }
+                        
+                        // Step 3: Compute center point in transformed space
+                        const sign = largeArcFlag !== sweepFlag ? 1 : -1;
+                        const sq = ((rxFinal * rxFinal * ryFinal * ryFinal) - 
+                                    (rxFinal * rxFinal * y1p * y1p) - 
+                                    (ryFinal * ryFinal * x1p * x1p)) / 
+                                   ((rxFinal * rxFinal * y1p * y1p) + 
+                                    (ryFinal * ryFinal * x1p * x1p));
+                        const coef = sign * Math.sqrt(Math.max(0, sq));
+                        const cxp = coef * ((rxFinal * y1p) / ryFinal);
+                        const cyp = coef * (-(ryFinal * x1p) / rxFinal);
+                        
+                        // Step 4: Compute center point in original space
+                        const cx = Math.cos(xAxisRotation) * cxp - Math.sin(xAxisRotation) * cyp + (startX + endX) / 2;
+                        const cy = Math.sin(xAxisRotation) * cxp + Math.cos(xAxisRotation) * cyp + (startY + endY) / 2;
+                        
+                        // Step 5: Compute start and sweep angles
+                        const ux = (x1p - cxp) / rxFinal;
+                        const uy = (y1p - cyp) / ryFinal;
+                        const vx = (-x1p - cxp) / rxFinal;
+                        const vy = (-y1p - cyp) / ryFinal;
+                        
+                        // Start angle
+                        let startAngle = angleBetween(1, 0, ux, uy);
+                        
+                        // Sweep angle
+                        let sweepAngle = angleBetween(ux, uy, vx, vy);
+                        if (sweepFlag === 0 && sweepAngle > 0) {
+                            sweepAngle -= 2 * Math.PI;
+                        } else if (sweepFlag === 1 && sweepAngle < 0) {
+                            sweepAngle += 2 * Math.PI;
+                        }
+                        
+                        // Normalize sweep angle for our use, always positive
+                        if (sweepAngle < 0) sweepAngle = 2 * Math.PI + sweepAngle;
+                        
+                        // Generate points along the arc
+                        const numSegments = Math.max(16, Math.ceil(Math.abs(sweepAngle) * 16));
+                        
                         for (let i = 1; i <= numSegments; i++) {
-                            const theta = startAngle + (i / numSegments) * (endAngle - startAngle);
-                            const x = cx + rx * Math.cos(theta) * Math.sign(endX - startX);
-                            const y = cy + ry * Math.sin(theta) * Math.sign(endY - startY);
+                            const theta = startAngle + (i / numSegments) * sweepAngle;
+                            
+                            // Parametric point on ellipse
+                            const x = cx + rxFinal * Math.cos(theta) * Math.cos(xAxisRotation) - 
+                                     ryFinal * Math.sin(theta) * Math.sin(xAxisRotation);
+                            const y = cy + rxFinal * Math.cos(theta) * Math.sin(xAxisRotation) + 
+                                     ryFinal * Math.sin(theta) * Math.cos(xAxisRotation);
+                                     
                             shape.lineTo(x, y);
                         }
                         
                         // Ensure we end exactly at the endpoint
                         shape.lineTo(endX, endY);
+                        
                     } catch (e) {
                         console.error('Error processing arc:', e);
                         // Fallback to simple line if arc processing fails
