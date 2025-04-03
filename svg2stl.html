@@ -389,7 +389,94 @@
               firstCommand = false;
           });
       }
-      
+      function parseSVG(svgString) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(svgString, 'image/svg+xml');
+            const svg = doc.querySelector('svg');
+            
+            // Extract viewBox
+            if (svg.getAttribute('viewBox')) {
+                const viewBoxValues = svg.getAttribute('viewBox').split(' ');
+                svgViewBox = {
+                    x: parseFloat(viewBoxValues[0]),
+                    y: parseFloat(viewBoxValues[1]),
+                    width: parseFloat(viewBoxValues[2]),
+                    height: parseFloat(viewBoxValues[3])
+                };
+            } else if (svg.getAttribute('width') && svg.getAttribute('height')) {
+                svgViewBox = {
+                    x: 0,
+                    y: 0,
+                    width: parseFloat(svg.getAttribute('width')),
+                    height: parseFloat(svg.getAttribute('height'))
+                };
+            }
+            
+            // Structure to hold paths and their types (outer contours vs holes)
+            svgPaths = [];
+            
+            // Extract paths and determine if they're outer contours or holes
+            const paths = svg.querySelectorAll('path');
+            paths.forEach(path => {
+                const isHole = determineIfHole(path);
+                svgPaths.push({
+                    pathData: path.getAttribute('d'),
+                    isHole: isHole
+                });
+            });
+            
+            // Handle rectangles
+            const rects = svg.querySelectorAll('rect');
+            rects.forEach(rect => {
+                const x = parseFloat(rect.getAttribute('x') || 0);
+                const y = parseFloat(rect.getAttribute('y') || 0);
+                const width = parseFloat(rect.getAttribute('width'));
+                const height = parseFloat(rect.getAttribute('height'));
+                const rx = parseFloat(rect.getAttribute('rx') || 0);
+                const ry = parseFloat(rect.getAttribute('ry') || 0);
+                
+                let pathData;
+                if (rx || ry) {
+                    // Handle rounded rectangles
+                    const r = rx || ry;
+                    pathData = createRoundedRectPath(x, y, width, height, r);
+                } else {
+                    // Simple rectangle
+                    pathData = `M${x},${y} h${width} v${height} h-${width} Z`;
+                }
+                
+                const isHole = determineIfHole(rect);
+                svgPaths.push({
+                    pathData: pathData,
+                    isHole: isHole
+                });
+            });
+            
+            // Handle circles
+            const circles = svg.querySelectorAll('circle');
+            circles.forEach(circle => {
+                const cx = parseFloat(circle.getAttribute('cx'));
+                const cy = parseFloat(circle.getAttribute('cy'));
+                const r = parseFloat(circle.getAttribute('r'));
+                
+                // Approximate circle with a path
+                const pathData = `M${cx + r},${cy} 
+                                A${r},${r} 0 0 1 ${cx},${cy-r} 
+                                A${r},${r} 0 0 1 ${cx-r},${cy} 
+                                A${r},${r} 0 0 1 ${cx},${cy+r} 
+                                A${r},${r} 0 0 1 ${cx+r},${cy} Z`;
+                
+                const isHole = determineIfHole(circle);
+                svgPaths.push({
+                    pathData: pathData,
+                    isHole: isHole
+                });
+            });
+            
+            console.log('Parsed SVG with', svgPaths.length, 'paths/shapes');
+            console.log('Holes:', svgPaths.filter(p => p.isHole).length);
+            console.log('Outer contours:', svgPaths.filter(p => !p.isHole).length);
+        }
       // Parse SVG path data string into commands
       function parseSVGPath(pathData) {
           const commands = [];
