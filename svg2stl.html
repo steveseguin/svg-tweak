@@ -401,6 +401,69 @@
                     Z`;
         }
 
+        // Create points to approximate an arc
+        function approximateArc(x1, y1, rx, ry, angle, largeArcFlag, sweepFlag, x2, y2) {
+            // Convert angle from degrees to radians
+            const angleRad = angle * Math.PI / 180;
+            
+            // Create a proper approximation with multiple points
+            const numSegments = 8; // Increase for smoother arcs
+            const points = [];
+            
+            // Find center of ellipse (simplified, assumes unrotated ellipse)
+            // Convert from endpoint to center parameterization
+            const dx = (x2 - x1) / 2;
+            const dy = (y2 - y1) / 2;
+            const x1p = 0;
+            const y1p = 0;
+            
+            // Adjust for different sweep and large arc flags
+            let start, end;
+            if ((!largeArcFlag && !sweepFlag) || (largeArcFlag && sweepFlag)) {
+                start = 0;
+                end = Math.PI / 2;
+            } else {
+                start = Math.PI / 2;
+                end = Math.PI;
+            }
+            
+            // Generate points along the arc
+            for (let i = 0; i <= numSegments; i++) {
+                const t = start + (i / numSegments) * (end - start);
+                const pointX = x1 + rx * Math.cos(t);
+                const pointY = y1 + ry * Math.sin(t);
+                points.push({ x: pointX, y: pointY });
+            }
+            
+            // Always include the end point
+            if (points.length === 0 || 
+                (points[points.length-1].x !== x2 || points[points.length-1].y !== y2)) {
+                points.push({ x: x2, y: y2 });
+            }
+            
+            return points;
+        }
+
+        function updateResolutionSetting() {
+            // Count the number of paths and the average number of points
+            let totalPoints = 0;
+            svgPaths.forEach(path => {
+                const commands = parseSVGPath(path.pathData);
+                totalPoints += commands.length;
+            });
+            
+            // Average points per path
+            const avgPoints = totalPoints / svgPaths.length || 0;
+            // Estimate complexity and set reasonable default
+            const complexity = Math.min(50, Math.max(5, Math.ceil(avgPoints / 4)));
+            
+            const resolutionSlider = document.getElementById('resolution');
+            const resolutionValue = document.getElementById('resolution').nextElementSibling;
+            
+            resolutionSlider.value = complexity;
+            resolutionValue.value = complexity;
+        }
+                
         function createShapeFromPathData(shape, pathData, scale) {
           // Parse SVG path data and create a Three.js shape
           const commands = parseSVGPath(pathData);
@@ -470,15 +533,66 @@
                       );
                       break;
                   case 'A': // Arc (absolute)
-                      // Simplified arc handling - convert to curve
-                      const arc = approximateArc(
-                          shape.currentPoint.x, shape.currentPoint.y,
-                          args[0], args[1], args[2], args[3], args[4], args[5], -args[6]
-                      );
-                      arc.forEach(point => {
-                          shape.lineTo(point.x, point.y);
-                      });
-                      break;
+                    // Improved arc handling with better approximation
+                    try {
+                        // Get current point for start of arc
+                        const startX = shape.currentPoint.x;
+                        const startY = shape.currentPoint.y;
+                        
+                        // Get arc parameters
+                        const rx = args[0];
+                        const ry = args[1];
+                        const xAxisRotation = args[2];
+                        const largeArcFlag = args[3];
+                        const sweepFlag = args[4];
+                        const endX = args[5];
+                        const endY = -args[6];
+                        
+                        // Generate points along the arc using improved approximation
+                        const numSegments = Math.max(8, Math.ceil((rx + ry) * scale * 0.25));
+                        
+                        // Convert to elliptical arc parameters
+                        // This is a simplified implementation that works for most common rounded rectangle cases
+                        const cx = (startX + endX) / 2;
+                        const cy = (startY + endY) / 2;
+                        
+                        // Determine angle span based on flags
+                        let startAngle, endAngle;
+                        if (sweepFlag === 0) {
+                            startAngle = 0;
+                            endAngle = Math.PI / 2;
+                        } else {
+                            startAngle = Math.PI / 2;
+                            endAngle = Math.PI;
+                        }
+                        
+                        if (largeArcFlag === 1) {
+                            // Swap for large arc
+                            const temp = startAngle;
+                            startAngle = endAngle;
+                            endAngle = temp + Math.PI;
+                        }
+                        
+                        // Find center offset based on rx, ry
+                        const offsetX = Math.abs(startX - endX) / 2;
+                        const offsetY = Math.abs(startY - endY) / 2;
+                        
+                        // Generate arc points
+                        for (let i = 1; i <= numSegments; i++) {
+                            const theta = startAngle + (i / numSegments) * (endAngle - startAngle);
+                            const x = cx + rx * Math.cos(theta) * Math.sign(endX - startX);
+                            const y = cy + ry * Math.sin(theta) * Math.sign(endY - startY);
+                            shape.lineTo(x, y);
+                        }
+                        
+                        // Ensure we end exactly at the endpoint
+                        shape.lineTo(endX, endY);
+                    } catch (e) {
+                        console.error('Error processing arc:', e);
+                        // Fallback to simple line if arc processing fails
+                        shape.lineTo(args[5], -args[6]);
+                    }
+                    break;
                   case 'Z':
                   case 'z':
                       shape.closePath();
@@ -552,7 +666,9 @@
         const lineElements = svg.querySelectorAll('line');
         const polylineElements = svg.querySelectorAll('polyline');
         const polygonElements = svg.querySelectorAll('polygon');
-        
+        const onlyHasRects = svg.querySelectorAll('*').length === 1 && 
+                    svg.querySelectorAll('rect[rx],rect[ry]').length === 1;
+
         // Process paths
         pathElements.forEach(path => {
             let isHole = isLineMode ? false : determineIfHole(path);
@@ -690,6 +806,8 @@
                 });
             });
         }
+
+        updateResolutionSetting();
         
         console.log('Parsed SVG with', svgPaths.length, 'paths/shapes');
         console.log('Holes:', svgPaths.filter(p => p.isHole).length);
@@ -751,16 +869,6 @@
         }
         
         return commands;
-    }
-      
-    // Create points to approximate an arc
-    function approximateArc(x1, y1, rx, ry, angle, largeArcFlag, sweepFlag, x2, y2) {
-        // Convert angle from degrees to radians
-        angle = angle * Math.PI / 180;
-        
-        // Simple approximation - just return end point for now
-        // For a more accurate implementation, additional math would be needed
-        return [{ x: x2, y: y2 }];
     }
       
     function determineIfHole(element) {
@@ -971,7 +1079,8 @@
         const extrudeSettings = {
             steps: 1,
             depth: extrusionHeight,
-            bevelEnabled: false
+            bevelEnabled: false,
+            curveSegments: resolution // Use resolution parameter for curve segments
         };
         
         // Create extruded geometries for all shapes
