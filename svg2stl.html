@@ -500,7 +500,7 @@
     const extrusionHeightValue = document.getElementById('extrusion-height').nextElementSibling;
     
     //extrusionHeightSlider.min = "0.1";
-    extrusionHeightSlider.max = Math.round(maxDimension * 0.5); // 50% of max dimension
+    extrusionHeightSlider.max = (maxDimension * 0.5); // 50% of max dimension
     extrusionHeightSlider.value = defaultHeight;
     extrusionHeightValue.value = defaultHeight;
     
@@ -508,9 +508,9 @@
     const baseThicknessSlider = document.getElementById('base-thickness');
     const baseThicknessValue = document.getElementById('base-thickness').nextElementSibling;
     
-    const defaultBase = Math.max(0.5, Math.round(maxDimension * 0.01)); // 1% of max dimension
+    const defaultBase = Math.max(0.5, (maxDimension * 0.01)); // 1% of max dimension
     baseThicknessSlider.min = "0";
-    baseThicknessSlider.max = Math.round(maxDimension * 0.1); // 10% of max dimension
+    baseThicknessSlider.max = (maxDimension * 0.1); // 10% of max dimension
     baseThicknessSlider.value = defaultBase;
     baseThicknessValue.value = defaultBase;
 }
