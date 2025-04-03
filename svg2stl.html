@@ -582,7 +582,7 @@
                         const largeArcFlag = args[3] ? 1 : 0;
                         const sweepFlag = args[4] ? 1 : 0;
                         const endX = args[5];
-                        const endY = -args[6];
+                        const endY = -args[6]; // Note Y-axis flip for Three.js
                         
                         // Skip degenerate cases
                         if (startX === endX && startY === endY) {
@@ -598,8 +598,9 @@
                         // SVG spec conversion from endpoint to center parameterization
                         
                         // Step 1: Compute transformed start point
-                        const dx = (startX - endX) / 2;
+                        // Flip Y coordinate before calculation to account for the Three.js y-axis flip
                         const dy = (startY - endY) / 2;
+                        const dx = (startX - endX) / 2;
                         const x1p = Math.cos(xAxisRotation) * dx + Math.sin(xAxisRotation) * dy;
                         const y1p = -Math.sin(xAxisRotation) * dx + Math.cos(xAxisRotation) * dy;
                         
@@ -613,13 +614,14 @@
                         }
                         
                         // Step 3: Compute center point in transformed space
-                        const sign = largeArcFlag !== sweepFlag ? 1 : -1;
-                        const sq = ((rxFinal * rxFinal * ryFinal * ryFinal) - 
-                                    (rxFinal * rxFinal * y1p * y1p) - 
-                                    (ryFinal * ryFinal * x1p * x1p)) / 
-                                   ((rxFinal * rxFinal * y1p * y1p) + 
-                                    (ryFinal * ryFinal * x1p * x1p));
-                        const coef = sign * Math.sqrt(Math.max(0, sq));
+                        // Flip sweep flag to account for the Three.js y-axis flip
+                        const sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
+                        const sq = Math.max(0, ((rxFinal * rxFinal * ryFinal * ryFinal) - 
+                                  (rxFinal * rxFinal * y1p * y1p) - 
+                                  (ryFinal * ryFinal * x1p * x1p)) / 
+                                 ((rxFinal * rxFinal * y1p * y1p) + 
+                                  (ryFinal * ryFinal * x1p * x1p)));
+                        const coef = sign * Math.sqrt(sq);
                         const cxp = coef * ((rxFinal * y1p) / ryFinal);
                         const cyp = coef * (-(ryFinal * x1p) / rxFinal);
                         
@@ -636,16 +638,14 @@
                         // Start angle
                         let startAngle = angleBetween(1, 0, ux, uy);
                         
-                        // Sweep angle
+                        // Sweep angle - flip the sweepFlag to account for y-axis flip
+                        const adjustedSweepFlag = 1 - sweepFlag;
                         let sweepAngle = angleBetween(ux, uy, vx, vy);
-                        if (sweepFlag === 0 && sweepAngle > 0) {
+                        if (adjustedSweepFlag === 0 && sweepAngle > 0) {
                             sweepAngle -= 2 * Math.PI;
-                        } else if (sweepFlag === 1 && sweepAngle < 0) {
+                        } else if (adjustedSweepFlag === 1 && sweepAngle < 0) {
                             sweepAngle += 2 * Math.PI;
                         }
-                        
-                        // Normalize sweep angle for our use, always positive
-                        if (sweepAngle < 0) sweepAngle = 2 * Math.PI + sweepAngle;
                         
                         // Generate points along the arc
                         const numSegments = Math.max(16, Math.ceil(Math.abs(sweepAngle) * 16));
