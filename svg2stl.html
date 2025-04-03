@@ -463,6 +463,43 @@
             resolutionSlider.value = complexity;
             resolutionValue.value = complexity;
         }
+
+        /**
+     * Calculates the angle between two 2D vectors.
+     * The angle is measured from vector (ux, uy) to vector (vx, vy) in radians.
+     * The result is between -PI and PI.
+     * @param {number} ux X-component of the first vector
+     * @param {number} uy Y-component of the first vector
+     * @param {number} vx X-component of the second vector
+     * @param {number} vy Y-component of the second vector
+     * @returns {number} Angle in radians
+     */
+    function angleBetween(ux, uy, vx, vy) {
+        const dot = ux * vx + uy * vy;
+        const lenU = Math.sqrt(ux * ux + uy * uy);
+        const lenV = Math.sqrt(vx * vx + vy * vy);
+
+        if (lenU === 0 || lenV === 0) {
+            // Handle zero-length vectors if necessary, e.g., return 0
+            return 0;
+        }
+
+        // Clamp the cosine value to the range [-1, 1] to avoid floating point errors
+        let cosTheta = dot / (lenU * lenV);
+        cosTheta = Math.max(-1.0, Math.min(1.0, cosTheta));
+
+        // Calculate the angle using acos. This gives an angle between 0 and PI.
+        let angle = Math.acos(cosTheta);
+
+        // Use the 2D cross product (determinant) to determine the sign (direction)
+        // ux * vy - uy * vx > 0 means angle is counter-clockwise (positive)
+        // ux * vy - uy * vx < 0 means angle is clockwise (negative)
+        if ((ux * vy - uy * vx) < 0) {
+            angle = -angle;
+        }
+
+        return angle; // Angle in radians, range [-PI, PI]
+    }
                 
         function createShapeFromPathData(shape, pathData, scale) {
           // Parse SVG path data and create a Three.js shape
