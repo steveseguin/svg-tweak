@@ -156,6 +156,25 @@
         .toggle-label {
             font-weight: bold;
         }
+        stl-converter-modal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #f5f5f5;
+            padding: 10px 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        #stl-converter-modal .modal-header h3 {
+            margin: 0;
+        }
+    
+        @media (prefers-color-scheme: dark) {
+            #stl-converter-modal .modal-header {
+                background-color: #2a2a2a;
+                border-color: #333;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1244,6 +1263,51 @@
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    });
+
+    // Check if embedded in iframe
+    const urlParams = new URLSearchParams(window.location.search);
+    const isEmbedded = urlParams.get('embedded') === 'true';
+    
+    // If embedded, hide elements meant for standalone mode
+    if (isEmbedded) {
+        document.addEventListener('DOMContentLoaded', () => {
+            // Hide drop area or other import options
+            const dropArea = document.getElementById('drop-area');
+            if (dropArea) {
+                dropArea.style.display = 'none';
+            }
+            
+            // Hide file input or text area toggle
+            const svgTextareaContainer = document.getElementById('svg-textarea-container');
+            if (svgTextareaContainer) {
+                svgTextareaContainer.style.display = 'none';
+            }
+            
+            // Adjust title or header to indicate embedded mode
+            const title = document.querySelector('h1');
+            if (title) {
+                title.textContent = 'SVG to STL Conversion';
+            }
+        });
+    }
+    
+    // Listen for SVG data from parent window
+    window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'svgData') {
+            const svgString = event.data.content;
+            
+            // Process the SVG
+            svgContent = svgString;
+            displaySVG(svgContent);
+            parseSVG(svgContent);
+            
+            // Enable convert button
+            const convertBtn = document.getElementById('convert-btn');
+            if (convertBtn) {
+                convertBtn.disabled = false;
+            }
+        }
     });
     </script>
 </body>
