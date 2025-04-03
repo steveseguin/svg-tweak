@@ -582,7 +582,7 @@
                         const largeArcFlag = args[3] ? 1 : 0;
                         const sweepFlag = args[4] ? 1 : 0;
                         const endX = args[5];
-                        const endY = -args[6]; // Note Y-axis flip for Three.js
+                        const endY = -args[6]; // Note the negative Y for Three.js coordinate system
                         
                         // Skip degenerate cases
                         if (startX === endX && startY === endY) {
@@ -594,77 +594,80 @@
                             break;
                         }
                         
-                        // Approximation based on endpoint parameterization
-                        // SVG spec conversion from endpoint to center parameterization
+                        // Approximate the arc with straight line segments
+                        // Step 1: Convert from endpoint to center parameterization
+                        // Apply coordinate corrections first for the Three.js y-flipped system
+                        const dx = (startX - endX) / 2;
+                        const dy = (startY - endY) / 2;
                         
                         // Step 1: Compute transformed start point
-                        // Flip Y coordinate before calculation to account for the Three.js y-axis flip
-                        const dy = (startY - endY) / 2;
-                        const dx = (startX - endX) / 2;
                         const x1p = Math.cos(xAxisRotation) * dx + Math.sin(xAxisRotation) * dy;
                         const y1p = -Math.sin(xAxisRotation) * dx + Math.cos(xAxisRotation) * dy;
                         
-                        // Step 2: Ensure radii are large enough
-                        const radiiCheck = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
-                        let rxFinal = rx, ryFinal = ry;
+                        // Step 2: Correct radii if necessary
+                        let rxSq = rx * rx;
+                        let rySq = ry * ry;
+                        const x1pSq = x1p * x1p;
+                        const y1pSq = y1p * y1p;
+                        
+                        // Check if the radii are too small
+                        const radiiCheck = x1pSq / rxSq + y1pSq / rySq;
                         if (radiiCheck > 1) {
-                            const radiiScale = Math.sqrt(radiiCheck);
-                            rxFinal = radiiScale * rx;
-                            ryFinal = radiiScale * ry;
+                            const s = Math.sqrt(radiiCheck);
+                            rx *= s;
+                            ry *= s;
+                            rxSq = rx * rx;
+                            rySq = ry * ry;
                         }
                         
-                        // Step 3: Compute center point in transformed space
-                        // Flip sweep flag to account for the Three.js y-axis flip
+                        // Step 3: Compute center
                         const sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
-                        const sq = Math.max(0, ((rxFinal * rxFinal * ryFinal * ryFinal) - 
-                                  (rxFinal * rxFinal * y1p * y1p) - 
-                                  (ryFinal * ryFinal * x1p * x1p)) / 
-                                 ((rxFinal * rxFinal * y1p * y1p) + 
-                                  (ryFinal * ryFinal * x1p * x1p)));
-                        const coef = sign * Math.sqrt(sq);
-                        const cxp = coef * ((rxFinal * y1p) / ryFinal);
-                        const cyp = coef * (-(ryFinal * x1p) / rxFinal);
                         
-                        // Step 4: Compute center point in original space
+                        const sq = ((rxSq * rySq) - (rxSq * y1pSq) - (rySq * x1pSq)) / 
+                                   ((rxSq * y1pSq) + (rySq * x1pSq));
+                        const coef = sign * Math.sqrt(Math.max(0, sq));
+                        
+                        const cxp = coef * ((rx * y1p) / ry);
+                        const cyp = coef * (-(ry * x1p) / rx);
+                        
+                        // Step 4: Compute final center coordinates
                         const cx = Math.cos(xAxisRotation) * cxp - Math.sin(xAxisRotation) * cyp + (startX + endX) / 2;
                         const cy = Math.sin(xAxisRotation) * cxp + Math.cos(xAxisRotation) * cyp + (startY + endY) / 2;
                         
-                        // Step 5: Compute start and sweep angles
-                        const ux = (x1p - cxp) / rxFinal;
-                        const uy = (y1p - cyp) / ryFinal;
-                        const vx = (-x1p - cxp) / rxFinal;
-                        const vy = (-y1p - cyp) / ryFinal;
+                        // Step 5: Calculate the start and sweep angles
+                        const ux = (x1p - cxp) / rx;
+                        const uy = (y1p - cyp) / ry;
+                        const vx = (-x1p - cxp) / rx;
+                        const vy = (-y1p - cyp) / ry;
                         
                         // Start angle
                         let startAngle = angleBetween(1, 0, ux, uy);
                         
-                        // Sweep angle - flip the sweepFlag to account for y-axis flip
-                        const adjustedSweepFlag = 1 - sweepFlag;
-                        let sweepAngle = angleBetween(ux, uy, vx, vy);
-                        if (adjustedSweepFlag === 0 && sweepAngle > 0) {
-                            sweepAngle -= 2 * Math.PI;
-                        } else if (adjustedSweepFlag === 1 && sweepAngle < 0) {
-                            sweepAngle += 2 * Math.PI;
+                        // Sweep angle
+                        let deltaAngle = angleBetween(ux, uy, vx, vy);
+                        
+                        // Ensure proper sweep direction based on sweep flag
+                        if (sweepFlag === 0 && deltaAngle > 0) {
+                            deltaAngle -= 2 * Math.PI;
+                        } else if (sweepFlag === 1 && deltaAngle < 0) {
+                            deltaAngle += 2 * Math.PI;
                         }
                         
                         // Generate points along the arc
-                        const numSegments = Math.max(16, Math.ceil(Math.abs(sweepAngle) * 16));
-                        
+                        const numSegments = Math.max(16, Math.ceil(Math.abs(deltaAngle) * 16));
                         for (let i = 1; i <= numSegments; i++) {
-                            const theta = startAngle + (i / numSegments) * sweepAngle;
+                            const theta = startAngle + (i / numSegments) * deltaAngle;
                             
-                            // Parametric point on ellipse
-                            const x = cx + rxFinal * Math.cos(theta) * Math.cos(xAxisRotation) - 
-                                     ryFinal * Math.sin(theta) * Math.sin(xAxisRotation);
-                            const y = cy + rxFinal * Math.cos(theta) * Math.sin(xAxisRotation) + 
-                                     ryFinal * Math.sin(theta) * Math.cos(xAxisRotation);
-                                     
+                            // Compute point on ellipse in the transformed space
+                            const xp = rx * Math.cos(theta);
+                            const yp = ry * Math.sin(theta);
+                            
+                            // Transform back to original space
+                            const x = Math.cos(xAxisRotation) * xp - Math.sin(xAxisRotation) * yp + cx;
+                            const y = Math.sin(xAxisRotation) * xp + Math.cos(xAxisRotation) * yp + cy;
+                            
                             shape.lineTo(x, y);
                         }
-                        
-                        // Ensure we end exactly at the endpoint
-                        shape.lineTo(endX, endY);
-                        
                     } catch (e) {
                         console.error('Error processing arc:', e);
                         // Fallback to simple line if arc processing fails
