@@ -348,6 +348,7 @@
                 <input type="range" id="svg-scale" min="0.5" max="3" step="0.1" value="1">
                 <span id="scale-value">100%</span>
             </div>
+            <button id="undo-btn" title="Undo (Ctrl+Z)">↩ Undo</button>
             <button id="center-view">🎯Center View</button>
             <button id="fit-to-content">🪟Fit to Content</button>
 			<div class="control-group">
@@ -368,10 +369,10 @@
 				<span>×</span>
 				<input type="number" id="export-height" min="1" value="800" aria-label="Export height">
 			</div>
-			<div class="control-group">
-			    <button id="convert-to-stl">🧊Convert to STL</button>
-			</div>
-			
+            <div class="control-group">
+                <button id="convert-to-stl">🧊Convert to STL</button>
+            </div>
+            <button id="shortcuts-btn" title="Keyboard shortcuts">⌨️ Shortcuts</button>
         </div>
         <div id="preview" role="region" aria-label="SVG Preview">
         </div>
@@ -388,6 +389,24 @@
                 <div class="modal-body">
                     <textarea id="export-output" readonly></textarea>
                     <button id="copy-output">Copy to Clipboard</button>
+                </div>
+            </div>
+        </div>
+        <div id="shortcuts-modal" class="modal">
+            <div class="modal-content" style="max-width:420px;">
+                <div class="modal-header">
+                    <h3>Keyboard Shortcuts</h3>
+                    <span class="close">&times;</span>
+                </div>
+                <div class="modal-body" style="padding:0 10px 10px;">
+                    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                        <tr><td style="padding:6px 0;"><kbd style="background:#eee;padding:2px 6px;border-radius:3px;font-size:12px;">Ctrl+Z</kbd></td><td>Undo</td></tr>
+                        <tr><td style="padding:6px 0;"><kbd style="background:#eee;padding:2px 6px;border-radius:3px;font-size:12px;">Delete</kbd> / <kbd style="background:#eee;padding:2px 6px;border-radius:3px;font-size:12px;">Backspace</kbd></td><td>Delete selected element</td></tr>
+                        <tr><td style="padding:6px 0;"><kbd style="background:#eee;padding:2px 6px;border-radius:3px;font-size:12px;">Scroll wheel</kbd></td><td>Resize selected element</td></tr>
+                        <tr><td style="padding:6px 0;"><kbd style="background:#eee;padding:2px 6px;border-radius:3px;font-size:12px;">Click</kbd></td><td>Select element</td></tr>
+                        <tr><td style="padding:6px 0;"><kbd style="background:#eee;padding:2px 6px;border-radius:3px;font-size:12px;">Drag</kbd></td><td>Move element</td></tr>
+                        <tr><td style="padding:6px 0;"><kbd style="background:#eee;padding:2px 6px;border-radius:3px;font-size:12px;">Click background</kbd></td><td>Deselect</td></tr>
+                    </table>
                 </div>
             </div>
         </div>
@@ -428,6 +447,21 @@ let initialX, initialY, elementInitialX, elementInitialY;
 let svgScale = 1;
 let svgContainer = null;
 let canvasBoundary = null;
+
+// Undo button
+document.getElementById('undo-btn').addEventListener('click', undo);
+
+// Shortcuts modal
+const shortcutsModal = document.getElementById('shortcuts-modal');
+document.getElementById('shortcuts-btn').addEventListener('click', () => {
+    shortcutsModal.style.display = 'block';
+});
+shortcutsModal.querySelector('.close').addEventListener('click', () => {
+    shortcutsModal.style.display = 'none';
+});
+window.addEventListener('click', (e) => {
+    if (e.target === shortcutsModal) shortcutsModal.style.display = 'none';
+});
 
 const stlConverterModal = document.getElementById('stl-converter-modal');
 const stlConverterIframe = document.getElementById('stl-converter-iframe');
