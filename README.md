@@ -4,7 +4,7 @@ A lightweight, browser-based SVG editor with a live preview, direct on-canvas
 editing, and one-click export/conversion. It is a single static HTML file built
 with vanilla JavaScript — no build step, no dependencies, nothing to install.
 
-**USE IT NOW: [https://svgtweak.com](https://svgtweak.com)**
+**USE IT NOW: [https://vdo.ninja/svg](https://vdo.ninja/svg)**
 
 ![image](https://github.com/user-attachments/assets/b730889b-7262-4ff5-877c-c07d4235d085)
 
