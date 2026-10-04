@@ -597,16 +597,23 @@
       lastValue = editor.value;
     }
   }
-  function beginAction() { flushTyping(); pushUndo(lastValue); }
+  function flushGroup() {
+    clearTimeout(groupTimer);
+    groupTimer = null;
+    groupActive = false;
+  }
+  function beginAction() { flushGroup(); flushTyping(); pushUndo(lastValue); }
   function endAction() { lastValue = editor.value; }
   // Group rapid repeated changes (wheel resize, nudges, colour sliders) into one undo step.
   function groupedAction(mutator) {
     if (!groupActive) { beginAction(); groupActive = true; }
     clearTimeout(groupTimer);
-    groupTimer = setTimeout(() => { groupActive = false; endAction(); }, 450);
+    groupTimer = setTimeout(flushGroup, 450);
     mutator();
+    endAction();
   }
   function undo() {
+    flushGroup();
     flushTyping();
     if (undoStack.length === 0) { toast('Nothing to undo'); return; }
     const prev = undoStack.pop();
@@ -1425,6 +1432,7 @@
   canvasHeightInput.addEventListener('change', updateCanvasSize);
   zoomInput.addEventListener('input', updateZoom);
   editor.addEventListener('input', () => {
+    flushGroup();
     clearTimeout(typingTimer);
     typingTimer = setTimeout(() => { typingTimer = null; pushUndo(lastValue); lastValue = editor.value; }, 500);
     updatePreview();
@@ -1448,3 +1456,4 @@
   </script>
 </body>
 </html>
+
