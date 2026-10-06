@@ -1098,16 +1098,13 @@
   function cropToContent() {
     const svg = svgContainer && svgContainer.querySelector('svg');
     if (!svg) return;
-    const els = Array.from(svg.querySelectorAll('*')).filter(el => el.tagName.toLowerCase() !== 'svg');
-    if (!els.length) return;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    els.forEach(el => {
-      let b; try { b = el.getBBox(); } catch (e) { return; }
-      if (!b || (b.width === 0 && b.height === 0)) return;
-      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-      maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
-    });
-    if (!Number.isFinite(minX)) return;
+    // The root box includes descendant transforms in the canvas coordinate system.
+    // Individual descendant boxes are local to each element and cannot be combined.
+    let b;
+    try { b = svg.getBBox(); } catch (e) { return; }
+    if (!b || (b.width === 0 && b.height === 0) ||
+        ![b.x, b.y, b.width, b.height].every(Number.isFinite)) return;
+    let minX = b.x, minY = b.y, maxX = b.x + b.width, maxY = b.y + b.height;
     const pad = 8;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
     const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
