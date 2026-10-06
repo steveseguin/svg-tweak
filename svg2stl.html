@@ -502,7 +502,7 @@
                     shape.lineTo(shape.currentPoint.x, -args[0]);
                     break;
                 case 'v': // Vertical line (relative)
-                    shape.lineTo(shape.currentPoint.x, shape.currentPoint.y - args[1]);
+                    shape.lineTo(shape.currentPoint.x, shape.currentPoint.y - args[0]);
                     break;
                 case 'C': // Cubic curve (absolute)
                     shape.bezierCurveTo(
