@@ -906,14 +906,46 @@
   }
   function centerSelected() {
     if (!selectedElement) return;
-    const svg = svgContainer.querySelector('svg');
+    const svg = svgContainer && svgContainer.querySelector('svg');
+    const parent = selectedElement.parentElement;
+    if (!svg || !parent) return;
     const d = getViewBoxDims(svg);
-    let bbox;
-    try { bbox = selectedElement.getBBox(); } catch (e) { return; }
-    const dx = (d.x + d.w / 2) - (bbox.x + bbox.width / 2);
-    const dy = (d.y + d.h / 2) - (bbox.y + bbox.height / 2);
+    let dx, dy;
+    try {
+      const bbox = selectedElement.getBBox();
+      if (![bbox.x, bbox.y, bbox.width, bbox.height, d.x, d.y, d.w, d.h].every(Number.isFinite) ||
+          bbox.width < 0 || bbox.height < 0 || (bbox.width === 0 && bbox.height === 0) ||
+          d.w <= 0 || d.h <= 0) return;
+      const elementMatrix = selectedElement.getScreenCTM();
+      const rootMatrix = svg.getScreenCTM();
+      const parentMatrix = parent.getScreenCTM();
+      if (![elementMatrix, rootMatrix, parentMatrix].every(m => {
+        if (!m || ![m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite)) return false;
+        const determinant = m.a * m.d - m.b * m.c;
+        return Number.isFinite(determinant) && determinant !== 0;
+      })) return;
+      const parentInverse = parentMatrix.inverse();
+      const point = svg.createSVGPoint();
+      // Center the transformed local bounding box, preserving SVG attribute transforms.
+      point.x = bbox.x + bbox.width / 2;
+      point.y = bbox.y + bbox.height / 2;
+      const current = point.matrixTransform(elementMatrix).matrixTransform(parentInverse);
+      point.x = d.x + d.w / 2;
+      point.y = d.y + d.h / 2;
+      const target = point.matrixTransform(rootMatrix).matrixTransform(parentInverse);
+      dx = target.x - current.x;
+      dy = target.y - current.y;
+    } catch (e) { return; }
+    if (![dx, dy].every(Number.isFinite) || (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9)) return;
     beginAction();
-    updateElementPosition(selectedElement, dx, dy);
+    const transform = selectedElement.getAttribute('transform') || '';
+    // Keep plain shape coordinates usable by the STL converter, which ignores transforms.
+    if (!transform.trim() && /^(rect|circle|ellipse|text|image|use|line|polygon|polyline)$/.test(selectedElement.tagName.toLowerCase())) {
+      updateElementPosition(selectedElement, dx, dy);
+    } else {
+      // Prepending translates in parent coordinates without changing existing transforms.
+      selectedElement.setAttribute('transform', `translate(${dx},${dy}) ${transform}`.trim());
+    }
     updateSVGText();
     endAction();
   }
