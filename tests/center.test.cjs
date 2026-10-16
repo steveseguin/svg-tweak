@@ -38,11 +38,12 @@ function fixture(options={}) {
   const {tag='path',transform='',parentTransform='',viewBox='0 0 200 200',box={x:10,y:10,width:20,height:20}}=options;
   const rootScreen=parseTransform('translate(125,87) scale(2.5)');
   const attrs={x:'10',y:'10',width:String(box.width),height:String(box.height)};
+  if(tag==='line') Object.assign(attrs,{x1:String(box.x),y1:String(box.y),x2:String(box.x+box.width),y2:String(box.y+box.height)});
   if(transform)attrs.transform=transform;
   const root={getAttribute:n=>n==='viewBox'?viewBox:null,getScreenCTM:()=>rootScreen,createSVGPoint:()=>new Point()};
   const parent={getScreenCTM:()=>root.getScreenCTM().multiply(parseTransform(parentTransform))};
   const element={tagName:tag,parentElement:parent,getAttribute:n=>attrs[n]??null,setAttribute:(n,v)=>{attrs[n]=String(v)},
-    getBBox:()=>tag==='rect'?{...box,x:Number(attrs.x),y:Number(attrs.y)}:{...box},
+    getBBox:()=>tag==='rect'?{...box,x:Number(attrs.x),y:Number(attrs.y)}:tag==='line'?{x:Math.min(+attrs.x1,+attrs.x2),y:Math.min(+attrs.y1,+attrs.y2),width:Math.abs(attrs.x2-attrs.x1),height:Math.abs(attrs.y2-attrs.y1)}:{...box},
     getScreenCTM:()=>parent.getScreenCTM().multiply(parseTransform(attrs.transform))};
   const calls=[];
   const context={selectedElement:element,svgContainer:{querySelector:()=>root},beginAction:()=>calls.push('begin'),updateSVGText:()=>calls.push('serialize'),endAction:()=>calls.push('end')};
@@ -53,6 +54,7 @@ function fixture(options={}) {
   return {attrs,root,parent,element,context,calls,run,assertCentered};
 }
 for(const [name,options] of [
+ ['plain rectangle under transformed parent',{tag:'rect',parentTransform:'translate(45,20) rotate(40) scale(2,3)'}],
  ['ordinary rectangle',{tag:'rect'}],['plain path',{}],['translated path',{transform:'translate(100,50)'}],
  ['scaled rectangle',{tag:'rect',transform:'scale(2,3)'}],['rotated rectangle',{tag:'rect',transform:'rotate(60)'}],
  ['transformed group',{tag:'g',transform:'rotate(35) scale(2,3)'}],
@@ -65,7 +67,8 @@ for(const [name,options] of [
  test(`${name}: centers once, preserves geometry/transforms, repeats without movement`,()=>{
    const f=fixture(options),before={...f.attrs};f.run();f.assertCentered();
    const after={...f.attrs};if(before.transform)assert(after.transform.endsWith(before.transform));
-   assert.equal(after.x,before.x);assert.equal(after.y,before.y);assert.equal(after.width,before.width);assert.equal(after.height,before.height);
+   if(options.tag!=='rect'||options.transform){assert.equal(after.x,before.x);assert.equal(after.y,before.y);}
+   assert.equal(after.width,before.width);assert.equal(after.height,before.height);
    assert.deepEqual(f.calls,['begin','serialize','end']);f.run();f.assertCentered();assert.deepEqual(f.attrs,after);assert.deepEqual(f.calls,['begin','serialize','end']);
  });
 }

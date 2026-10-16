@@ -938,9 +938,14 @@
     } catch (e) { return; }
     if (![dx, dy].every(Number.isFinite) || (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9)) return;
     beginAction();
-    // Prepending translates in parent coordinates for paths, groups and basic shapes alike.
     const transform = selectedElement.getAttribute('transform') || '';
-    selectedElement.setAttribute('transform', `translate(${dx},${dy}) ${transform}`.trim());
+    // Keep plain shape coordinates usable by the STL converter, which ignores transforms.
+    if (!transform.trim() && /^(rect|circle|ellipse|text|image|use|line|polygon|polyline)$/.test(selectedElement.tagName.toLowerCase())) {
+      updateElementPosition(selectedElement, dx, dy);
+    } else {
+      // Prepending translates in parent coordinates without changing existing transforms.
+      selectedElement.setAttribute('transform', `translate(${dx},${dy}) ${transform}`.trim());
+    }
     updateSVGText();
     endAction();
   }
